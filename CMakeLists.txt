@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 include_directories(include)
 
 enable_testing()
+add_executable(test_isa tests/test_isa.cpp src/example.cpp)
+add_test(NAME test_isa COMMAND test_isa)
+
 add_executable(test_main tests/test_main.cpp src/example.cpp)
 add_test(NAME test_main COMMAND test_main)
 
