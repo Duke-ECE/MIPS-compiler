@@ -44,3 +44,4 @@
 main.dSYM/*
 /.cache/*
 .DS_Store
+.CMakelists.txt
