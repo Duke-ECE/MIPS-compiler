@@ -605,6 +605,100 @@ TEST(encode_memory_instructions) {
 }
 
 // ============================================================================
+// Intel HEX 格式测试
+// ============================================================================
+
+TEST(intel_hex_checksum) {
+    // 测试校验和计算
+    // 示例: :04 0000 00 31408000 0B
+    // 字节: 04, 00, 00, 00, 31, 40, 80, 00
+    // 校验和: (0x100 - (04 + 00 + 00 + 00 + 31 + 40 + 80 + 00)) & 0xFF = 0x0B
+    std::vector<uint8_t> bytes = {0x04, 0x00, 0x00, 0x00, 0x31, 0x40, 0x80, 0x00};
+    uint8_t checksum = AsmEncoder::calculateHexChecksum(bytes);
+    ASSERT_EQ(static_cast<int>(checksum), 0x0B);
+}
+
+TEST(intel_hex_record_format) {
+    // 测试 HEX 记录生成
+    // 数据: 0x31408000 at address 0x0000
+    std::vector<uint8_t> data = {0x31, 0x40, 0x80, 0x00};
+    std::string record = AsmEncoder::generateHexRecord(0x00, 0x0000, data);
+    
+    // 格式检查: :LL AAAA TT DDDDDDDD CC
+    // :04 0000 00 31408000 0B
+    // 长度: 1(:) + 2(len) + 4(addr) + 2(type) + 8(data) + 2(checksum) = 19 字符
+    ASSERT_TRUE(record[0] == ':');  // 起始标记
+    ASSERT_EQ(record.length(), 19u);  // 总长度 19 字符
+    
+    // 验证各部分
+    ASSERT_EQ(record.substr(0, 1), ":");     // 起始冒号
+    ASSERT_EQ(record.substr(1, 2), "04");    // 数据字节数
+    ASSERT_EQ(record.substr(3, 4), "0000");  // 地址
+    ASSERT_EQ(record.substr(7, 2), "00");    // 类型（数据记录）
+    ASSERT_EQ(record.substr(9, 8), "31408000");  // 数据
+    // 校验和: 04+00+00+00+31+40+80+00 = F5, checksum = (~F5 + 1) & FF = 0B
+    ASSERT_EQ(record.substr(17, 2), "0B");   // 校验和
+}
+
+TEST(intel_hex_eof_record) {
+    // EOF 记录: :00000001FF
+    std::vector<uint8_t> empty;
+    std::string eof = AsmEncoder::generateHexRecord(0x01, 0x0000, empty);
+    ASSERT_EQ(eof, ":00000001FF");
+}
+
+TEST(intel_hex_string_output) {
+    // 测试完整 HEX 字符串输出
+    std::vector<uint32_t> machineCode = {0x31408000};
+    std::string hex = AsmEncoder::generateHexString(machineCode);
+    
+    // 应该包含数据记录和 EOF 记录
+    ASSERT_TRUE(hex.find(':') != std::string::npos);
+    ASSERT_TRUE(hex.find(":00000001FF") != std::string::npos);
+}
+
+TEST(intel_hex_empty_program) {
+    // 空程序应该只有 EOF 记录
+    std::vector<uint32_t> empty;
+    std::string hex = AsmEncoder::generateHexString(empty);
+    
+    // 应该只包含 EOF 记录
+    ASSERT_TRUE(hex.find(":00000001FF") != std::string::npos);
+    // 第一个字符应该是 ':'（EOF 记录的开始）
+    ASSERT_TRUE(hex[0] == ':');
+}
+
+TEST(intel_hex_multiple_words) {
+    // 多个 word
+    std::vector<uint32_t> machineCode = {
+        0x00000000,  // nop
+        0x31408000,  // some instruction
+        0xFFFFFFFF   // all ones
+    };
+    std::string hex = AsmEncoder::generateHexString(machineCode);
+    
+    // 计算记录数（每行一个 : 开头）
+    int recordCount = 0;
+    for (size_t i = 0; i < hex.length(); i++) {
+        if (hex[i] == ':') recordCount++;
+    }
+    
+    // 应该有 3 个数据记录 + 1 个 EOF 记录 = 4
+    ASSERT_EQ(recordCount, 4);
+}
+
+TEST(intel_hex_address_increment) {
+    // 验证地址递增（每个 word 4 字节）
+    std::vector<uint32_t> machineCode = {0x00000000, 0x11111111};
+    std::string hex = AsmEncoder::generateHexString(machineCode);
+    
+    // 第一条记录地址 0000
+    ASSERT_TRUE(hex.find(":04000000") != std::string::npos);
+    // 第二条记录地址 0004
+    ASSERT_TRUE(hex.find(":04000400") != std::string::npos);
+}
+
+// ============================================================================
 // 位域精确性测试
 // ============================================================================
 
@@ -716,6 +810,16 @@ int main() {
     std::cout << "\n--- 特殊指令测试 ---" << std::endl;
     RUN_TEST(encode_io_instructions);
     RUN_TEST(encode_memory_instructions);
+    
+    // Intel HEX 格式测试
+    std::cout << "\n--- Intel HEX 格式测试 ---" << std::endl;
+    RUN_TEST(intel_hex_checksum);
+    RUN_TEST(intel_hex_record_format);
+    RUN_TEST(intel_hex_eof_record);
+    RUN_TEST(intel_hex_string_output);
+    RUN_TEST(intel_hex_empty_program);
+    RUN_TEST(intel_hex_multiple_words);
+    RUN_TEST(intel_hex_address_increment);
     
     // 位域精确性测试
     std::cout << "\n--- 位域精确性测试 ---" << std::endl;
