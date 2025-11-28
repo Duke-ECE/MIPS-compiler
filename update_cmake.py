@@ -1,25 +1,29 @@
 import os
 
 # --- 项目配置 ---
-SRC_FILES = ["src/example.cpp"]   # 公共源文件，会附加到每个测试可执行文件
-MAIN_TARGET = "src/main.cpp"      # 主程序
 PROJECT_NAME = "main"
 CXX_STANDARD = 17
 TEST_DIR = "tests"
+SRC_DIR = "src"
+MAIN_FILE = "src/main.cpp"  # 主程序入口文件
 
-# --- 递归扫描 tests 目录 ---
-def find_test_files(directory):
+# --- 递归扫描目录中的所有 .cpp 文件 ---
+def find_cpp_files(directory, exclude=None):
     """递归查找目录中的所有 .cpp 文件"""
-    test_files = []
+    cpp_files = []
+    exclude = exclude or []
     for root, dirs, files in os.walk(directory):
         for file in files:
             if file.endswith(".cpp"):
-                # 获取相对于项目根目录的路径
                 relative_path = os.path.relpath(os.path.join(root, file))
-                test_files.append(relative_path)
-    return sorted(test_files)  # 保证顺序一致
+                if relative_path not in exclude:
+                    cpp_files.append(relative_path)
+    return sorted(cpp_files)
 
-tests = find_test_files(TEST_DIR)
+# --- 扫描源文件和测试文件 ---
+# 排除 main.cpp，因为它包含 main() 函数，会和测试冲突
+all_src_files = find_cpp_files(SRC_DIR, exclude=[MAIN_FILE])
+test_files = find_cpp_files(TEST_DIR)
 
 # --- 拼接 CMakeLists 内容 ---
 lines = [
@@ -29,24 +33,24 @@ lines = [
     "",
     "include_directories(include)",
     "",
-    "enable_testing()"
+    "enable_testing()",
+    ""
 ]
 
 # --- 添加测试 ---
-for test_path in tests:
-    # 生成可执行文件名：替换路径分隔符为下划线，去掉扩展名
+for test_path in test_files:
     name = os.path.splitext(test_path.replace("/", "_").replace("\\", "_"))[0]
-    srcs = " ".join([test_path] + SRC_FILES)
+    srcs = " ".join([test_path] + all_src_files)
     lines.append(f"add_executable({name} {srcs})")
     lines.append(f"add_test(NAME {name} COMMAND {name})")
     lines.append("")
 
 # --- 添加主程序 ---
-main_srcs = " ".join([MAIN_TARGET] + SRC_FILES)
+main_srcs = " ".join([MAIN_FILE] + all_src_files)
 lines.append(f"add_executable({PROJECT_NAME} {main_srcs})")
 lines.append("")
 
-# --- 检查并创建/更新 CMakeLists.txt ---
+# --- 写入 CMakeLists.txt ---
 cmake_file = "CMakeLists.txt"
 file_exists = os.path.exists(cmake_file)
 
@@ -59,6 +63,10 @@ if file_exists:
 else:
     print("✅ CMakeLists.txt 已创建")
 
-print(f"包含以下测试：")
-for t in tests:
+print(f"\n包含的源文件 ({len(all_src_files)} 个)：")
+for s in all_src_files:
+    print("  -", s)
+
+print(f"\n包含的测试 ({len(test_files)} 个)：")
+for t in test_files:
     print("  -", t)
