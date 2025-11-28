@@ -1,3 +1,7 @@
+/*
+token.hpp: MIPS 编译器的记号定义
+作用： 定义词法分析器生成的各种记号类型及其结构。
+*/
 #pragma once
 #include <string>
 
