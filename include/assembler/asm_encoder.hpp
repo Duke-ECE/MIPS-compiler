@@ -204,61 +204,6 @@ public:
      */
     static std::string disassembleFields(uint32_t code);
 
-    // ==================== Intel HEX 文件输出 ====================
-
-    /**
-     * @brief 将机器码写入 Intel HEX 格式文件
-     * 
-     * Intel HEX 格式说明：
-     * :LLAAAATT[DD...]CC
-     * - LL: 数据字节数
-     * - AAAA: 16位地址
-     * - TT: 记录类型 (00=数据, 01=EOF)
-     * - DD: 数据字节
-     * - CC: 校验和（二补数，使整行字节和为0）
-     * 
-     * @param words 32位机器码序列
-     * @param path 输出文件路径
-     * @param startAddress 起始地址（字地址，默认0）
-     * @return 是否写入成功
-     */
-    static bool writeHex(const std::vector<uint32_t>& words, const std::string& path,
-                         uint32_t startAddress = 0);
-
-    /**
-     * @brief 将编码结果写入 Intel HEX 格式文件
-     * @param result 编码结果
-     * @param path 输出文件路径
-     * @return 是否写入成功
-     */
-    static bool writeHex(const EncodeResult& result, const std::string& path);
-
-    /**
-     * @brief 生成 Intel HEX 格式字符串（不写入文件）
-     * @param words 32位机器码序列
-     * @param startAddress 起始地址（字地址，默认0）
-     * @return Intel HEX 格式的完整字符串
-     */
-    static std::string generateHexString(const std::vector<uint32_t>& words,
-                                          uint32_t startAddress = 0);
-
-    /**
-     * @brief 生成单条 Intel HEX 记录
-     * @param type 记录类型 (0x00=数据, 0x01=EOF)
-     * @param address 16位地址
-     * @param data 数据字节
-     * @return HEX 记录字符串（包含起始冒号）
-     */
-    static std::string generateHexRecord(uint8_t type, uint16_t address, 
-                                          const std::vector<uint8_t>& data);
-
-    /**
-     * @brief 计算 Intel HEX 校验和
-     * @param bytes 字节序列（不包含校验和本身）
-     * @return 校验和字节
-     */
-    static uint8_t calculateHexChecksum(const std::vector<uint8_t>& bytes);
-
 private:
     // ==================== 辅助函数 ====================
 

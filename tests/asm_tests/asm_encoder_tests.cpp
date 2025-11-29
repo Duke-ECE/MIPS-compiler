@@ -10,14 +10,17 @@
  * - 标签解析
  * - 完整程序编码
  * - 输出格式转换
+ * - Intel HEX 格式输出
  */
 
 #include "assembler/asm_encoder.hpp"
 #include "assembler/asm_parser.hpp"
+#include "assembler/hex_writer.hpp"
 #include "isa/Instructions.hpp"
 #include "isa/Opcode.hpp"
 #include "isa/Registers.hpp"
 #include <iostream>
+#include <iomanip>
 #include <cassert>
 #include <cstdint>
 
@@ -544,6 +547,66 @@ target:
 }
 
 // ============================================================================
+// Hello World 程序测试（打印 HEX 输出）
+// ============================================================================
+
+TEST(hello_world_program) {
+    std::string program = R"(
+.text
+    addi $r1, $r0, 72   # H
+    output $r1
+    addi $r1, $r0, 101  # e
+    output $r1
+    addi $r1, $r0, 108  # l
+    output $r1
+    addi $r1, $r0, 108  # l
+    output $r1
+    addi $r1, $r0, 111  # o
+    output $r1
+    beq $r0, $r0, -1    # loop forever
+)";
+    
+    // 解析
+    AsmParser parser(program);
+    ParseResult parseResult = parser.parse();
+    ASSERT_TRUE(parseResult.success);
+    
+    std::cout << "\n\n========== Hello World 程序编码结果 ==========\n";
+    std::cout << "解析了 " << parseResult.instructions.size() << " 条指令\n\n";
+    
+    // 编码
+    AsmEncoder encoder;
+    EncodeResult encodeResult = encoder.encode(parseResult);
+    ASSERT_TRUE(encodeResult.success);
+    
+    // 收集机器码
+    std::vector<uint32_t> machineCode;
+    for (const auto& instr : encodeResult.instructions) {
+        machineCode.push_back(instr.machineCode);
+    }
+    
+    // 打印每条指令的机器码
+    std::cout << "--- 机器码 ---\n";
+    for (size_t i = 0; i < encodeResult.instructions.size(); i++) {
+        const auto& instr = encodeResult.instructions[i];
+        std::cout << "[" << i << "] 0x" 
+                  << std::hex << std::setfill('0') << std::setw(8) 
+                  << instr.machineCode << std::dec;
+        if (!instr.sourceText.empty()) {
+            std::cout << "  ; " << instr.sourceText;
+        }
+        std::cout << "\n";
+    }
+    
+    // 生成并打印 Intel HEX
+    std::cout << "\n--- Intel HEX 输出 ---\n";
+    std::string hexOutput = HexWriter::generate(machineCode);
+    std::cout << hexOutput;
+    
+    std::cout << "==============================================\n\n";
+}
+
+// ============================================================================
 // 错误处理测试
 // ============================================================================
 
@@ -605,7 +668,7 @@ TEST(encode_memory_instructions) {
 }
 
 // ============================================================================
-// Intel HEX 格式测试
+// Intel HEX 格式测试 (使用 HexWriter)
 // ============================================================================
 
 TEST(intel_hex_checksum) {
@@ -614,7 +677,7 @@ TEST(intel_hex_checksum) {
     // 字节: 04, 00, 00, 00, 31, 40, 80, 00
     // 校验和: (0x100 - (04 + 00 + 00 + 00 + 31 + 40 + 80 + 00)) & 0xFF = 0x0B
     std::vector<uint8_t> bytes = {0x04, 0x00, 0x00, 0x00, 0x31, 0x40, 0x80, 0x00};
-    uint8_t checksum = AsmEncoder::calculateHexChecksum(bytes);
+    uint8_t checksum = HexWriter::calculateChecksum(bytes);
     ASSERT_EQ(static_cast<int>(checksum), 0x0B);
 }
 
@@ -622,7 +685,7 @@ TEST(intel_hex_record_format) {
     // 测试 HEX 记录生成
     // 数据: 0x31408000 at address 0x0000
     std::vector<uint8_t> data = {0x31, 0x40, 0x80, 0x00};
-    std::string record = AsmEncoder::generateHexRecord(0x00, 0x0000, data);
+    std::string record = HexWriter::generateRecord(HexWriter::RECORD_DATA, 0x0000, data);
     
     // 格式检查: :LL AAAA TT DDDDDDDD CC
     // :04 0000 00 31408000 0B
@@ -642,15 +705,14 @@ TEST(intel_hex_record_format) {
 
 TEST(intel_hex_eof_record) {
     // EOF 记录: :00000001FF
-    std::vector<uint8_t> empty;
-    std::string eof = AsmEncoder::generateHexRecord(0x01, 0x0000, empty);
+    std::string eof = HexWriter::generateEofRecord();
     ASSERT_EQ(eof, ":00000001FF");
 }
 
 TEST(intel_hex_string_output) {
     // 测试完整 HEX 字符串输出
     std::vector<uint32_t> machineCode = {0x31408000};
-    std::string hex = AsmEncoder::generateHexString(machineCode);
+    std::string hex = HexWriter::generate(machineCode);
     
     // 应该包含数据记录和 EOF 记录
     ASSERT_TRUE(hex.find(':') != std::string::npos);
@@ -660,7 +722,7 @@ TEST(intel_hex_string_output) {
 TEST(intel_hex_empty_program) {
     // 空程序应该只有 EOF 记录
     std::vector<uint32_t> empty;
-    std::string hex = AsmEncoder::generateHexString(empty);
+    std::string hex = HexWriter::generate(empty);
     
     // 应该只包含 EOF 记录
     ASSERT_TRUE(hex.find(":00000001FF") != std::string::npos);
@@ -675,7 +737,7 @@ TEST(intel_hex_multiple_words) {
         0x31408000,  // some instruction
         0xFFFFFFFF   // all ones
     };
-    std::string hex = AsmEncoder::generateHexString(machineCode);
+    std::string hex = HexWriter::generate(machineCode);
     
     // 计算记录数（每行一个 : 开头）
     int recordCount = 0;
@@ -690,12 +752,22 @@ TEST(intel_hex_multiple_words) {
 TEST(intel_hex_address_increment) {
     // 验证地址递增（每个 word 4 字节）
     std::vector<uint32_t> machineCode = {0x00000000, 0x11111111};
-    std::string hex = AsmEncoder::generateHexString(machineCode);
+    std::string hex = HexWriter::generate(machineCode);
     
     // 第一条记录地址 0000
     ASSERT_TRUE(hex.find(":04000000") != std::string::npos);
     // 第二条记录地址 0004
     ASSERT_TRUE(hex.find(":04000400") != std::string::npos);
+}
+
+TEST(intel_hex_word_to_bytes) {
+    // 测试字节拆分（大端序）
+    std::vector<uint8_t> bytes = HexWriter::wordToBytes(0x12345678);
+    ASSERT_EQ(bytes.size(), 4u);
+    ASSERT_EQ(bytes[0], 0x12);
+    ASSERT_EQ(bytes[1], 0x34);
+    ASSERT_EQ(bytes[2], 0x56);
+    ASSERT_EQ(bytes[3], 0x78);
 }
 
 // ============================================================================
@@ -802,6 +874,10 @@ int main() {
     RUN_TEST(encode_branch_instructions);
     RUN_TEST(encode_with_label_resolution);
     
+    // Hello World 程序测试
+    std::cout << "\n--- Hello World 程序测试 ---" << std::endl;
+    RUN_TEST(hello_world_program);
+    
     // 错误处理测试
     std::cout << "\n--- 错误处理测试 ---" << std::endl;
     RUN_TEST(encode_error_undefined_label);
@@ -820,6 +896,7 @@ int main() {
     RUN_TEST(intel_hex_empty_program);
     RUN_TEST(intel_hex_multiple_words);
     RUN_TEST(intel_hex_address_increment);
+    RUN_TEST(intel_hex_word_to_bytes);
     
     // 位域精确性测试
     std::cout << "\n--- 位域精确性测试 ---" << std::endl;

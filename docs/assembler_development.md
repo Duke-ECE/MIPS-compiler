@@ -92,9 +92,19 @@ jal function
 - `toBinaryString()`: 二进制字符串（带空格分隔）
 - `disassembleFields()`: 字段分解显示
 
-**文件输出**:
-- `writeHex()`: Intel HEX 格式文件
-- `generateHexString()`: Intel HEX 格式字符串
+### 4. HexWriter (Intel HEX 文件写入器)
+
+**文件**: `include/assembler/hex_writer.hpp` (header-only)
+
+**功能**: 生成 Intel HEX 格式输出
+
+**主要函数**:
+- `writeFile()`: 写入 Intel HEX 格式文件
+- `generate()`: 生成 Intel HEX 格式字符串
+- `generateRecord()`: 生成单条 HEX 记录
+- `generateEofRecord()`: 生成 EOF 记录
+- `calculateChecksum()`: 计算校验和
+- `wordToBytes()`: 将 32 位字拆分为字节
 
 ---
 
@@ -205,14 +215,18 @@ Intel HEX 是一种 ASCII 文本格式，用于传输二进制数据到 EPROM、
 ### 使用示例
 
 ```cpp
-#include "assembler/asm_encoder.hpp"
+#include "assembler/hex_writer.hpp"
 
 // 写入文件
 std::vector<uint32_t> code = {0x31408000, 0x00000000};
-AsmEncoder::writeHex(code, "output.hex");
+HexWriter::writeFile(code, "output.hex");
 
 // 生成字符串
-std::string hexStr = AsmEncoder::generateHexString(code);
+std::string hexStr = HexWriter::generate(code);
+
+// 生成单条记录
+std::vector<uint8_t> data = {0x31, 0x40, 0x80, 0x00};
+std::string record = HexWriter::generateRecord(HexWriter::RECORD_DATA, 0x0000, data);
 ```
 
 ### 输出示例
