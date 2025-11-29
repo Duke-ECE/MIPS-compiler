@@ -36,14 +36,14 @@ std::string asmErrorTypeToString(AsmErrorType type) {
 // ============================================================================
 
 AsmParser::AsmParser(const std::string& source)
-    : lexer(source), currentIndex(0), currentAddress(0), 
+    : lexer(source), currentIndex(0), currentAddress(0), dataAddress(0),
       textStartAddress(0), dataStartAddress(0),
-      inTextSection(true), inDataSection(false) {}
+      inTextSection(true), inDataSection(false), pendingDataLabel("") {}
 
 AsmParser::AsmParser(AsmLexer&& lex)
-    : lexer(std::move(lex)), currentIndex(0), currentAddress(0),
+    : lexer(std::move(lex)), currentIndex(0), currentAddress(0), dataAddress(0),
       textStartAddress(0), dataStartAddress(0),
-      inTextSection(true), inDataSection(false) {}
+      inTextSection(true), inDataSection(false), pendingDataLabel("") {}
 
 // ============================================================================
 // 主解析函数
@@ -62,6 +62,7 @@ ParseResult AsmParser::parse() {
     // 重置位置
     currentIndex = 0;
     currentAddress = textStartAddress;
+    dataAddress = dataStartAddress;
     
     // 第二遍：解析指令
     secondPass();
@@ -72,13 +73,14 @@ ParseResult AsmParser::parse() {
     // 填充结果
     result.success = errors.empty();
     result.instructions = instructions;
+    result.dataWords = dataWords;
     result.symbols = symbolTable;
     result.errors = errors;
     result.warnings = warnings;
     result.textStart = textStartAddress;
     result.textSize = static_cast<uint32_t>(instructions.size());
     result.dataStart = dataStartAddress;
-    result.dataSize = 0; // TODO: 支持数据段
+    result.dataSize = static_cast<uint32_t>(dataWords.size());
     
     return result;
 }
@@ -89,6 +91,9 @@ ParseResult AsmParser::parse() {
 
 void AsmParser::firstPass() {
     currentAddress = textStartAddress;
+    dataAddress = dataStartAddress;
+    inTextSection = true;
+    inDataSection = false;
     
     while (!isAtEnd()) {
         AsmToken token = currentToken();
@@ -104,8 +109,12 @@ void AsmParser::firstPass() {
                 reportError(AsmErrorType::DUPLICATE_LABEL, 
                     "标签 '" + token.text + "' 重复定义", token.line, token.column);
             } else {
-                // 添加到符号表
-                symbolTable[token.text] = SymbolInfo(token.text, currentAddress, token.line);
+                // 根据当前段确定地址和标签类型
+                if (inDataSection) {
+                    symbolTable[token.text] = SymbolInfo(token.text, dataAddress, token.line, true);
+                } else {
+                    symbolTable[token.text] = SymbolInfo(token.text, currentAddress, token.line, false);
+                }
             }
             advance();
             continue;
@@ -119,6 +128,15 @@ void AsmParser::firstPass() {
             } else if (token.text == ".data") {
                 inTextSection = false;
                 inDataSection = true;
+            } else if (token.text == ".word" && inDataSection) {
+                // .word 指令占用一个字
+                dataAddress++;
+                advance();
+                // 跳过数值
+                if (!isAtEnd() && currentToken().type == AsmTokenType::NUMBER) {
+                    advance();
+                }
+                continue;
             }
             advance();
             continue;
@@ -145,8 +163,10 @@ void AsmParser::firstPass() {
 
 void AsmParser::secondPass() {
     currentAddress = textStartAddress;
+    dataAddress = dataStartAddress;
     inTextSection = true;
     inDataSection = false;
+    pendingDataLabel = "";
     
     while (!isAtEnd()) {
         AsmToken token = currentToken();
@@ -157,8 +177,13 @@ void AsmParser::secondPass() {
             continue;
         }
         
-        // 跳过标签（已在第一遍处理）
+        // 处理标签
         if (token.type == AsmTokenType::LABEL) {
+            if (inDataSection) {
+                // 数据段标签，保存以便关联到下一个 .word
+                pendingDataLabel = token.text;
+            }
+            // 代码段标签已在第一遍处理
             advance();
             continue;
         }
@@ -171,13 +196,37 @@ void AsmParser::secondPass() {
             } else if (token.text == ".data") {
                 inTextSection = false;
                 inDataSection = true;
+            } else if (token.text == ".word" && inDataSection) {
+                // 解析 .word 指令
+                int wordLine = token.line;
+                advance(); // 消耗 .word
+                
+                // 期望一个数值
+                if (!isAtEnd() && currentToken().type == AsmTokenType::NUMBER) {
+                    uint32_t value = static_cast<uint32_t>(currentToken().numericValue);
+                    DataWord dw(dataAddress, value, wordLine, pendingDataLabel);
+                    dataWords.push_back(dw);
+                    dataAddress++;
+                    pendingDataLabel = ""; // 清空待关联的标签
+                    advance(); // 消耗数值
+                } else {
+                    reportError(AsmErrorType::MISSING_OPERAND,
+                        ".word 指令需要一个数值", wordLine, token.column);
+                }
+                continue;
             }
             advance();
             continue;
         }
         
-        // 解析指令
+        // 解析指令（仅在代码段）
         if (token.type == AsmTokenType::INSTRUCTION) {
+            if (inDataSection) {
+                reportError(AsmErrorType::SYNTAX_ERROR,
+                    "数据段中不能有指令: '" + token.text + "'", token.line, token.column);
+                synchronize();
+                continue;
+            }
             auto instr = parseInstruction();
             if (instr.has_value()) {
                 instr->address = currentAddress;
@@ -187,6 +236,12 @@ void AsmParser::secondPass() {
                 // 错误恢复：跳到下一行
                 synchronize();
             }
+            continue;
+        }
+        
+        // 在数据段跳过数值（可能是没有 .word 前缀的数据，兼容某些格式）
+        if (token.type == AsmTokenType::NUMBER && inDataSection) {
+            advance();
             continue;
         }
         

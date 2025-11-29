@@ -130,6 +130,20 @@ struct ParsedInstruction {
 // ============================================================================
 
 /**
+ * @brief 数据字信息（.word 指令）
+ */
+struct DataWord {
+    uint32_t address;       // 数据地址（字地址）
+    uint32_t value;         // 数据值
+    int line;               // 源代码行号
+    std::string label;      // 关联的标签（如果有）
+    
+    DataWord() : address(0), value(0), line(0), label("") {}
+    DataWord(uint32_t addr, uint32_t val, int ln, const std::string& lbl = "")
+        : address(addr), value(val), line(ln), label(lbl) {}
+};
+
+/**
  * @brief 符号信息
  */
 struct SymbolInfo {
@@ -137,10 +151,11 @@ struct SymbolInfo {
     uint32_t address;       // 地址（字地址）
     int definedLine;        // 定义所在行
     bool isResolved;        // 是否已解析
+    bool isData;            // 是否是数据标签（在.data段中）
     
-    SymbolInfo() : name(""), address(0), definedLine(0), isResolved(false) {}
-    SymbolInfo(const std::string& n, uint32_t addr, int line)
-        : name(n), address(addr), definedLine(line), isResolved(true) {}
+    SymbolInfo() : name(""), address(0), definedLine(0), isResolved(false), isData(false) {}
+    SymbolInfo(const std::string& n, uint32_t addr, int line, bool data = false)
+        : name(n), address(addr), definedLine(line), isResolved(true), isData(data) {}
 };
 
 /**
@@ -158,6 +173,7 @@ using SymbolTable = std::map<std::string, SymbolInfo>;
 struct ParseResult {
     bool success;                               // 解析是否成功
     std::vector<ParsedInstruction> instructions; // 解析后的指令列表
+    std::vector<DataWord> dataWords;            // 数据字列表（.word 指令）
     SymbolTable symbols;                        // 符号表
     std::vector<AsmError> errors;               // 错误列表
     std::vector<std::string> warnings;          // 警告列表
@@ -397,13 +413,16 @@ private:
     std::vector<ParsedInstruction> instructions; // 指令列表
     std::vector<AsmError> errors;           // 错误列表
     std::vector<std::string> warnings;      // 警告列表
+    std::vector<DataWord> dataWords;        // 数据字列表（.word）
     
     uint32_t currentAddress;                // 当前地址（字地址）
+    uint32_t dataAddress;                   // 数据段当前地址
     uint32_t textStartAddress;              // 代码段起始地址
     uint32_t dataStartAddress;              // 数据段起始地址
     
     bool inTextSection;                     // 当前是否在代码段
     bool inDataSection;                     // 当前是否在数据段
+    std::string pendingDataLabel;           // 待关联的数据标签
 };
 
 } // namespace assembler

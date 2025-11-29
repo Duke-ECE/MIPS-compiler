@@ -151,10 +151,12 @@ std::string FileIO::generateHex(const std::vector<uint32_t>& code, uint32_t star
     constexpr uint8_t RECORD_DATA = 0x00;
     constexpr uint8_t RECORD_EOF = 0x01;
     constexpr uint8_t RECORD_EXT_LINEAR_ADDR = 0x04;
+    constexpr uint32_t IMEM_DEPTH = 4096;  // 固定 4KB = 4096 words
     
-    for (size_t i = 0; i < code.size(); i++) {
-        uint32_t word = code[i];
-        uint32_t byteAddress = (startAddress + static_cast<uint32_t>(i)) * 4;
+    // 输出固定 4096 行数据
+    for (uint32_t i = 0; i < IMEM_DEPTH; i++) {
+        uint32_t word = (i < code.size()) ? code[i] : 0x00000000;  // 不足的填充 0
+        uint32_t byteAddress = (startAddress + i) * 4;
         
         // 如果地址超过 16 位，需要使用扩展地址记录
         if (byteAddress > 0xFFFF) {
@@ -172,7 +174,7 @@ std::string FileIO::generateHex(const std::vector<uint32_t>& code, uint32_t star
         oss << generateHexRecord(RECORD_DATA, addr16, data) << "\n";
     }
     
-    // 添加 EOF 记录
+    // 添加 EOF 记录（第 4097 行）
     oss << generateHexRecord(RECORD_EOF, 0x0000, {}) << "\n";
     
     return oss.str();

@@ -144,8 +144,13 @@ TEST(generate_hex_multiple_words) {
         if (c == ':') recordCount++;
     }
     
-    // 应该有 3 个数据记录 + 1 个 EOF 记录 = 4
-    ASSERT_EQ(recordCount, 4);
+    // 固定输出 4096 个数据记录 + 1 个 EOF 记录 = 4097
+    ASSERT_EQ(recordCount, 4097);
+    
+    // 验证数据内容
+    ASSERT_TRUE(hex.find("00000000") != std::string::npos);
+    ASSERT_TRUE(hex.find("11111111") != std::string::npos);
+    ASSERT_TRUE(hex.find("22222222") != std::string::npos);
 }
 
 TEST(generate_hex_address_increment) {

@@ -29,7 +29,9 @@ namespace assembler {
  */
 struct AssembleResult {
     bool success;                       // 是否成功
-    std::vector<uint32_t> code;         // 机器码
+    std::vector<uint32_t> code;         // 机器码（兼容旧接口，包含imem）
+    std::vector<uint32_t> imem;         // 指令内存（代码段）
+    std::vector<uint32_t> dmem;         // 数据内存（数据段）
     std::vector<std::string> errors;    // 错误列表
     std::vector<std::string> warnings;  // 警告列表
     

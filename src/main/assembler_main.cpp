@@ -79,12 +79,21 @@ AssembleResult Assembler::assembleWithResult(const std::string& asmText) {
         return result;
     }
     
-    // 3. 提取机器码
+    // 3. 提取指令内存（代码段 -> imem）
     result.success = true;
-    result.code.reserve(encodeResult.instructions.size());
+    result.imem.reserve(encodeResult.instructions.size());
     for (const auto& instr : encodeResult.instructions) {
-        result.code.push_back(instr.machineCode);
+        result.imem.push_back(instr.machineCode);
     }
+    
+    // 4. 提取数据内存（数据段 -> dmem）
+    result.dmem.reserve(parseResult.dataWords.size());
+    for (const auto& dataWord : parseResult.dataWords) {
+        result.dmem.push_back(dataWord.value);
+    }
+    
+    // 5. code 保持兼容（仅包含 imem）
+    result.code = result.imem;
     
     return result;
 }
