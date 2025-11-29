@@ -1,3 +1,7 @@
+/*
+token.hpp: MIPS 编译器的记号定义
+作用： 定义词法分析器生成的各种记号类型及其结构。
+*/
 #pragma once
 #include <string>
 
@@ -10,17 +14,17 @@ enum class TokenType {
     NUMBER,
 
     // Operators
-    PLUS, MINUS, STAR, SLASH,
+    PLUS, MINUS, STAR, SLASH,// +, -, *, /
     ASSIGN,        // =
     EQ,            // ==
     NEQ,           // !=
-    LT, GT, LE, GE,
+    LT, GT, LE, GE, // <, >, <=, >=
 
     // Delimiters
-    LPAREN, RPAREN,
-    LBRACE, RBRACE,
-    SEMICOLON,
-    COMMA,
+    LPAREN, RPAREN,// (, )
+    LBRACE, RBRACE,// {, }
+    SEMICOLON,// ;
+    COMMA,// ,
 
     // End of file
     END_OF_FILE,
