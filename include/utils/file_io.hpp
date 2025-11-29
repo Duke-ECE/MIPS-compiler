@@ -82,7 +82,8 @@ public:
      */
     static FileResult writeHex(const std::string& path, 
                                const std::vector<uint32_t>& code,
-                               uint32_t startAddress = 0);
+                               uint32_t startAddress = 0,
+                               bool wordAddressing = false);
     
     /**
      * @brief 生成 Intel HEX 格式字符串
@@ -91,7 +92,8 @@ public:
      * @return HEX 格式字符串
      */
     static std::string generateHex(const std::vector<uint32_t>& code,
-                                   uint32_t startAddress = 0);
+                                   uint32_t startAddress = 0,
+                                   bool wordAddressing = false);
     
     // ==================== MIF 格式输出 ====================
     

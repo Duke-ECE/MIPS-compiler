@@ -105,8 +105,8 @@ void Assembler::writeMIF(const std::vector<uint32_t>& code, const std::string& p
     }
 }
 
-void Assembler::writeHEX(const std::vector<uint32_t>& code, const std::string& path) {
-    utils::FileResult fileResult = utils::FileIO::writeHex(path, code);
+void Assembler::writeHEX(const std::vector<uint32_t>& code, const std::string& path, bool wordAddressing) {
+    utils::FileResult fileResult = utils::FileIO::writeHex(path, code, 0, wordAddressing);
     if (!fileResult.success) {
         throw std::runtime_error("写入 HEX 文件失败: " + fileResult.error);
     }

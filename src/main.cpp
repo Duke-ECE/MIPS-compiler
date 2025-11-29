@@ -141,15 +141,16 @@ int main(int argc, char* argv[]) {
     
     try {
         if (format == "hex" || format == "both") {
-            // imem -> .hex
+            // imem -> .hex（使用 word 地址）
             std::string imemHexPath = outputBase + ".hex";
-            assembler.writeHEX(result.imem, imemHexPath);
+            assembler.writeHEX(result.imem, imemHexPath, true);
             std::cout << "      已生成 imem: " << imemHexPath << "\n";
             
             // dmem -> _dmem.hex（如果有数据段）
             if (!result.dmem.empty()) {
                 std::string dmemHexPath = outputBase + "_dmem.hex";
-                assembler.writeHEX(result.dmem, dmemHexPath);
+                // dmem 使用 word 地址输出（每个地址对应一个 word 单元）
+                assembler.writeHEX(result.dmem, dmemHexPath, true);
                 std::cout << "      已生成 dmem: " << dmemHexPath << "\n";
             }
         }

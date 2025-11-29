@@ -8,3 +8,4 @@ applyTo: '**'
 5. 常量名用全大写加下划线的形式如MAX_BUFFER_SIZE
 6. 所有注释用中文写
 7. 不许改我的CMakeLists.txt
+8. 用中文回答我

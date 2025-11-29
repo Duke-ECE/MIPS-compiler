@@ -145,19 +145,26 @@ std::string FileIO::generateHexRecord(uint8_t type, uint16_t address,
     return oss.str();
 }
 
-std::string FileIO::generateHex(const std::vector<uint32_t>& code, uint32_t startAddress) {
+std::string FileIO::generateHex(const std::vector<uint32_t>& code, uint32_t startAddress, bool wordAddressing) {
     std::ostringstream oss;
-    
+
     constexpr uint8_t RECORD_DATA = 0x00;
     constexpr uint8_t RECORD_EOF = 0x01;
     constexpr uint8_t RECORD_EXT_LINEAR_ADDR = 0x04;
     constexpr uint32_t IMEM_DEPTH = 4096;  // 固定 4KB = 4096 words
-    
+
     // 输出固定 4096 行数据
     for (uint32_t i = 0; i < IMEM_DEPTH; i++) {
         uint32_t word = (i < code.size()) ? code[i] : 0x00000000;  // 不足的填充 0
-        uint32_t byteAddress = (startAddress + i) * 4;
-        
+        uint32_t byteAddress;
+        if (wordAddressing) {
+            // 数据段使用 word 地址（不乘 4）
+            byteAddress = (startAddress + i);
+        } else {
+            // 指令内存使用字地址乘以 4 得到字节地址
+            byteAddress = (startAddress + i) * 4;
+        }
+
         // 如果地址超过 16 位，需要使用扩展地址记录
         if (byteAddress > 0xFFFF) {
             uint16_t upperAddr = static_cast<uint16_t>((byteAddress >> 16) & 0xFFFF);
@@ -167,23 +174,24 @@ std::string FileIO::generateHex(const std::vector<uint32_t>& code, uint32_t star
             };
             oss << generateHexRecord(RECORD_EXT_LINEAR_ADDR, 0x0000, extAddrData) << "\n";
         }
-        
+
         // 生成数据记录
         std::vector<uint8_t> data = wordToBytes(word);
         uint16_t addr16 = static_cast<uint16_t>(byteAddress & 0xFFFF);
         oss << generateHexRecord(RECORD_DATA, addr16, data) << "\n";
     }
-    
+
     // 添加 EOF 记录（第 4097 行）
     oss << generateHexRecord(RECORD_EOF, 0x0000, {}) << "\n";
-    
+
     return oss.str();
 }
 
 FileResult FileIO::writeHex(const std::string& path,
                             const std::vector<uint32_t>& code,
-                            uint32_t startAddress) {
-    std::string content = generateHex(code, startAddress);
+                            uint32_t startAddress,
+                            bool wordAddressing) {
+    std::string content = generateHex(code, startAddress, wordAddressing);
     return writeFile(path, content);
 }
 

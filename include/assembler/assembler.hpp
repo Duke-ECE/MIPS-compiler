@@ -78,7 +78,7 @@ public:
      * @param code 32位机器码序列
      * @param path 输出文件路径
      */
-    void writeHEX(const std::vector<uint32_t>& code, const std::string& path);
+    void writeHEX(const std::vector<uint32_t>& code, const std::string& path, bool wordAddressing = false);
     
     /**
      * @brief 获取最后一次汇编的错误信息
