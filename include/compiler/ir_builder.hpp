@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 class IRBuilder {
 public:
@@ -34,9 +35,19 @@ private:
 
     // 临时变量计数（t0, t1, t2...）
     int tempCounter;
+    
+    // MIPS调用约定支持
+    int frameSize;                                    // 当前函数栈帧大小
+    int localVarOffset;                              // 当前局部变量偏移
+    std::unordered_map<std::string, int> localVars;  // 变量名 -> 栈偏移映射
+    bool hasExplicitReturn;                          // 当前函数是否有显式return语句
 
     // 生成一个新的临时变量名
     std::string newTemp();
+    
+    // MIPS栈帧管理
+    int allocateLocalVar(const std::string &varName);   // 为局部变量分配栈空间
+    void calculateFrameSize(const ASTFunction *func);   // 计算函数栈帧大小
 
     // 生成语句和表达式的 IR
     void genStmt(const ASTStatement *stmt);

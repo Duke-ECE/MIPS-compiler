@@ -5,19 +5,18 @@
  * This file defines the CodeGen class that translates an Intermediate Representation (IR)
  * into assembly code suitable for a target architecture (e.g., MIPS).
  * 
- * CodeGen class:
- * - generateAssembly: Main function to convert IRProgram to assembly code.
- * - translate: Helper function to translate individual IR instructions to assembly.
- * 
  */
 
 #ifndef CODEGEN_HPP
 #define CODEGEN_HPP
 
 #include "compiler/ir.hpp"
+#include "isa/Registers.hpp"
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <stdexcept>
+#include <set>
 
 class CodeGen {
 public:
@@ -27,19 +26,53 @@ public:
     std::vector<std::string> generateAssembly(const IRProgram &program);
 
 private:
-    // 变量名 → 寄存器编号
-    std::unordered_map<std::string, int> regMap;
+    // -----------------------------
+    // Register allocation state
+    // -----------------------------
+    std::unordered_map<std::string, std::string> regMap;   // variable → register
+    std::vector<std::string> availableTemps;               // $t0–$t9
+    std::vector<std::string> availableSaved;               // $s0–$s7
 
-    // 给新变量分配寄存器
-    int allocateRegister(const std::string &var);
+    // NEW: fixed ordering for callee-saved registers
+    std::vector<std::string> savedOrder;                   // { $s0, $s1, ..., $s7 }
 
-    // 把 IRInstruction 翻译成多行 asm
-    void translate(const IRInstruction &inst,
-                   std::vector<std::string> &outAsm);
+    std::unordered_map<std::string, bool> usedCalleeSaved; // which $s registers used
 
-    // helpers
-    std::string regName(int id) const;     // $rX
+    int currentFrameSize;                                  // stack frame size
+
+
+    // -----------------------------
+    // Register allocators
+    // -----------------------------
+    std::string allocateTemp();                            // get a $t register
+    std::string allocateSaved();                           // get a $s register
+    std::string allocateRegister(const std::string &var);  // var → register
+    void releaseRegister(const std::string &reg);          // return register
+
+
+    // -----------------------------
+    // Calling-convention support
+    // -----------------------------
+    void generatePrologue(int frameSize, std::vector<std::string> &out);
+    void generateEpilogue(int frameSize, std::vector<std::string> &out);
+
+    void saveCallerSaved(std::vector<std::string> &out);
+    void restoreCallerSaved(std::vector<std::string> &out);
+
+
+    // -----------------------------
+    // IR → Assembly
+    // -----------------------------
+    void translate(const IRInstruction &inst, std::vector<std::string> &outAsm);
+
+
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    std::string regName(int id) const;                     // deprecated
     std::string labelName(const std::string &name) const;
+    bool isMIPSRegister(const std::string &name) const;
+    void initRegisterPools();                              // initialize pools
 };
 
 #endif // CODEGEN_HPP

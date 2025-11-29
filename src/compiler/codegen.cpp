@@ -2,14 +2,26 @@
 #include <sstream>
 #include <stdexcept>
 
-CodeGen::CodeGen() {
+CodeGen::CodeGen() : currentFrameSize(0) {
+    initRegisterPools();
 }
 
-int CodeGen::allocateRegister(const std::string &var) {
-    if (regMap.count(var)) return regMap[var];
-    int id = regMap.size() + 1;  // r1, r2, r3...
-    regMap[var] = id;
-    return id;
+// ========================================================
+// 寄存器分配：MIPS 风格
+// ========================================================
+
+std::string CodeGen::allocateRegister(const std::string &var) {
+    if (var == "0" || var == "$r0" || var == "$zero")
+        return "$zero";
+
+    auto it = regMap.find(var);
+    if (it != regMap.end())
+        return it->second;
+
+    // 新变量 → 分配一个临时寄存器 (t0→t9)
+    std::string reg = allocateTemp();
+    regMap[var] = reg;
+    return reg;
 }
 
 std::string CodeGen::regName(int id) const {
@@ -20,6 +32,10 @@ std::string CodeGen::labelName(const std::string &name) const {
     return name;
 }
 
+// ========================================================
+// 主入口：翻译 IR → Assembly
+// ========================================================
+
 std::vector<std::string>
 CodeGen::generateAssembly(const IRProgram &program) {
     std::vector<std::string> out;
@@ -28,219 +44,368 @@ CodeGen::generateAssembly(const IRProgram &program) {
     return out;
 }
 
+// ========================================================
+// IR 指令翻译核心
+// ========================================================
 void CodeGen::translate(const IRInstruction &I,
                         std::vector<std::string> &out)
 {
     const std::string &op = I.op;
 
-    // --------------------
-    // Label
-    // --------------------
+    // ------------------------------------
+    // 函数标签
+    // ------------------------------------
     if (op == "label") {
         out.push_back(I.dst + ":");
         return;
     }
 
-    // --------------------
-    // jmp label
-    // --------------------
-    if (op == "jmp") {
-        out.push_back("j " + labelName(I.dst));
+    // ------------------------------------
+    // enter（函数入口）
+    // ------------------------------------
+    if (op == "enter") {
+        currentFrameSize = std::stoi(I.dst);      // frameSize 是 word 数
+        generatePrologue(currentFrameSize, out);
         return;
     }
 
-    // --------------------
-    // ret value → jr $value
-    // --------------------
+    // ------------------------------------
+    // leave（函数出口）
+    // ------------------------------------
+    if (op == "leave") {
+        generateEpilogue(currentFrameSize, out);
+        return;
+    }
+
+    // ------------------------------------
+    // load: load dst, offset  → lw dst, offset($fp)
+    // ------------------------------------
+    if (op == "load") {
+        std::string rd = allocateRegister(I.dst);
+        out.push_back("lw " + rd + ", " + I.src1 + "($fp)");
+        return;
+    }
+
+    // ------------------------------------
+    // store: store src, offset → sw src, offset($fp)
+    // ------------------------------------
+    if (op == "store") {
+        std::string rs = allocateRegister(I.dst);
+        out.push_back("sw " + rs + ", " + I.src1 + "($fp)");
+        return;
+    }
+
+    // ------------------------------------
+    // 参数传递 param x, index
+    // ------------------------------------
+    if (op == "param") {
+        int idx = std::stoi(I.src1);
+        std::string r = allocateRegister(I.dst);
+
+        if (idx < 4) {
+            std::string a = "$a" + std::to_string(idx);
+            out.push_back("addi " + a + ", " + r + ", 0");
+        } else {
+            int spillOffset = (idx - 4) + 1;  // word addressed
+            out.push_back("sw " + r + ", " + std::to_string(spillOffset) + "($sp)");
+        }
+        return;
+    }
+
+    // ------------------------------------
+    // jmp
+    // ------------------------------------
+    if (op == "jmp") {
+        out.push_back("j " + I.dst);
+        return;
+    }
+
+    // ------------------------------------
+    // ret
+    // ------------------------------------
     if (op == "ret") {
         if (!I.dst.empty()) {
-            int r = allocateRegister(I.dst);
-            out.push_back("jr " + regName(r));
-        } else {
-            out.push_back("jr $r31");
+            std::string r = allocateRegister(I.dst);
+            out.push_back("addi $v0, " + r + ", 0");
         }
         return;
     }
 
-    // --------------------
-    // mov dst, src
-    // immediate or register
-    // using addi
-    // --------------------
+    // ------------------------------------
+    // mov
+    // ------------------------------------
     if (op == "mov") {
-        int rd = allocateRegister(I.dst);
+        std::string rd = allocateRegister(I.dst);
 
-        // immediate?
-        bool isImm = true;
-        for (char c : I.src1) {
-            if (!isdigit(c) && c != '-') { isImm = false; break; }
-        }
+        bool imm = true;
+        for (char c : I.src1)
+            if (!isdigit(c) && c != '-') imm = false;
 
-        if (isImm) {
-            out.push_back("addi " + regName(rd) + ", $r0, " + I.src1);
+        if (imm) {
+            out.push_back("addi " + rd + ", $zero, " + I.src1);
         } else {
-            int rs = allocateRegister(I.src1);
-            out.push_back("addi " + regName(rd) + ", " + regName(rs) + ", 0");
+            std::string rs = allocateRegister(I.src1);
+            out.push_back("addi " + rd + ", " + rs + ", 0");
         }
         return;
     }
 
-    // --------------------
-    // add / sub / and / or
-    // --------------------
-    if (op == "add" || op == "sub" ||
-        op == "and" || op == "or")
-    {
-        int rd = allocateRegister(I.dst);
-        int rs = allocateRegister(I.src1);
-        int rt = allocateRegister(I.src2);
-        out.push_back(op + " " + regName(rd) + ", "
-                           + regName(rs) + ", "
-                           + regName(rt));
+    // ------------------------------------
+    // add/sub/and/or
+    // ------------------------------------
+    if (op=="add" || op=="sub" || op=="and" || op=="or") {
+        std::string rd = allocateRegister(I.dst);
+        std::string rs = allocateRegister(I.src1);
+        std::string rt = allocateRegister(I.src2);
+        out.push_back(op + " " + rd + ", " + rs + ", " + rt);
         return;
     }
 
-    // --------------------
-    // mul / div → software expansion
-    // --------------------
-    if (op == "mul" || op == "div") {
-        // We expand "mul" as repeated addition
-        // And "div" as repeated subtraction
-        // (simple but valid on your ISA)
+    // ------------------------------------
+    // mul/div (软件实现)
+    // ------------------------------------
+    if (op=="mul" || op=="div") {
+        std::string rd = allocateRegister(I.dst);
+        std::string ra = allocateRegister(I.src1);
+        std::string rb = allocateRegister(I.src2);
 
-        int rd = allocateRegister(I.dst);
-        int a  = allocateRegister(I.src1);
-        int b  = allocateRegister(I.src2);
+        static int L = 0;
+        std::string loop = "LMD_LOOP_" + std::to_string(L);
+        std::string end  = "LMD_END_"  + std::to_string(L);
+        L++;
 
-        static int lbl = 0;
-        std::string L_loop = "LMD_LOOP_" + std::to_string(lbl);
-        std::string L_end  = "LMD_END_"  + std::to_string(lbl);
-        lbl++;
+        out.push_back("addi " + rd + ", $zero, 0");
 
-        // clear rd = 0
-        out.push_back("addi " + regName(rd) + ", $r0, 0");
-
-        if (op == "mul") {
-            // multiply rd = a * b
-            out.push_back(L_loop + ":");
-            out.push_back("beq " + regName(b) + ", $r0, " + L_end);
-            out.push_back("add " + regName(rd) + ", " + regName(rd) + ", " + regName(a));
-            out.push_back("addi " + regName(b) + ", " + regName(b) + ", -1");
-            out.push_back("j " + L_loop);
-            out.push_back(L_end + ":");
+        if (op=="mul") {
+            out.push_back(loop + ":");
+            out.push_back("beq " + rb + ", $zero, " + end);
+            out.push_back("add " + rd + ", " + rd + ", " + ra);
+            out.push_back("addi " + rb + ", " + rb + ", -1");
+            out.push_back("j " + loop);
+            out.push_back(end + ":");
         } else {
-            // divide rd = a / b (we count how many times b fits into a)
-            out.push_back(L_loop + ":");
-            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_end);
-            out.push_back("sub " + regName(a) + ", " + regName(a) + ", " + regName(b));
-            out.push_back("addi " + regName(rd) + ", " + regName(rd) + ", 1");
-            out.push_back("j " + L_loop);
-            out.push_back(L_end + ":");
+            out.push_back(loop + ":");
+            out.push_back("bgt " + rb + ", " + ra + ", " + end);
+            out.push_back("sub " + ra + ", " + ra + ", " + rb);
+            out.push_back("addi " + rd + ", " + rd + ", 1");
+            out.push_back("j " + loop);
+            out.push_back(end + ":");
         }
         return;
     }
 
-    // --------------------
-    // Unary neg: x = -y → sub x, r0, y
-    // (ISA has sub)
-    // --------------------
+    // ------------------------------------
+    // unary neg
+    // ------------------------------------
     if (op == "neg") {
-        int rd = allocateRegister(I.dst);
-        int rs = allocateRegister(I.src1);
-        out.push_back("sub " + regName(rd) + ", $r0, " + regName(rs));
+        std::string rd = allocateRegister(I.dst);
+        std::string rs = allocateRegister(I.src1);
+        out.push_back("sub " + rd + ", $zero, " + rs);
         return;
     }
 
-    // --------------------
-    // Unary not: x = !y
-    // --------------------
+    // ------------------------------------
+    // unary not
+    // ------------------------------------
     if (op == "not") {
-        int rd = allocateRegister(I.dst);
-        int rs = allocateRegister(I.src1);
+        std::string rd = allocateRegister(I.dst);
+        std::string rs = allocateRegister(I.src1);
 
-        static int lbl = 0;
-        std::string L_true = "LNOT_T_" + std::to_string(lbl);
-        std::string L_end  = "LNOT_E_" + std::to_string(lbl);
-        lbl++;
+        static int L=0;
+        std::string T = "LNOT_T_" + std::to_string(L);
+        std::string E = "LNOT_E_" + std::to_string(L);
+        L++;
 
-        out.push_back("beq " + regName(rs) + ", $r0, " + L_true);
-        out.push_back("addi " + regName(rd) + ", $r0, 0");
-        out.push_back("j " + L_end);
-        out.push_back(L_true + ":");
-        out.push_back("addi " + regName(rd) + ", $r0, 1");
-        out.push_back(L_end + ":");
+        out.push_back("beq " + rs + ", $zero, " + T);
+        out.push_back("addi " + rd + ", $zero, 0");
+        out.push_back("j " + E);
+        out.push_back(T + ":");
+        out.push_back("addi " + rd + ", $zero, 1");
+        out.push_back(E + ":");
         return;
     }
 
-    // --------------------
+    // ------------------------------------
     // Comparisons
-    // IR: dst = lt a b
-    // --------------------
-    if (op == "lt" || op == "le" ||
-        op == "gt" || op == "ge" ||
-        op == "eq" || op == "ne")
+    // ------------------------------------
+    if (op=="lt"||op=="le"||op=="gt"||op=="ge"||op=="eq"||op=="ne")
     {
-        int rd = allocateRegister(I.dst);
-        int a  = allocateRegister(I.src1);
-        int b  = allocateRegister(I.src2);
+        std::string rd = allocateRegister(I.dst);
+        std::string a  = allocateRegister(I.src1);
+        std::string b  = allocateRegister(I.src2);
 
-        static int lbl = 0;
-        std::string L_true = "LCMP_T_" + std::to_string(lbl);
-        std::string L_end  = "LCMP_E_" + std::to_string(lbl);
-        lbl++;
+        static int L=0;
+        std::string T = "LCMP_T_" + std::to_string(L);
+        std::string E = "LCMP_E_" + std::to_string(L);
+        L++;
 
-        if (op == "lt") {
-            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_true);
-        }
-        else if (op == "gt") {
-            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + L_true);
-        }
-        else if (op == "eq") {
-            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + L_true);
-        }
-        else if (op == "ne") {
-            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + L_end);
-        }
-        else if (op == "le") {
-            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + L_end);
-            out.push_back("j " + L_true);
-        }
-        else if (op == "ge") {
-            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_end);
-            out.push_back("j " + L_true);
-        }
+        if      (op=="lt") out.push_back("bgt " + b + ", " + a + ", " + T);
+        else if (op=="gt") out.push_back("bgt " + a + ", " + b + ", " + T);
+        else if (op=="eq") out.push_back("beq " + a + ", " + b + ", " + T);
+        else if (op=="ne") out.push_back("beq " + a + ", " + b + ", " + E);
+        else if (op=="le") { out.push_back("bgt " + a + ", " + b + ", " + E); out.push_back("j " + T); }
+        else if (op=="ge") { out.push_back("bgt " + b + ", " + a + ", " + E); out.push_back("j " + T); }
 
-        out.push_back("addi " + regName(rd) + ", $r0, 0");
-        out.push_back("j " + L_end);
-        out.push_back(L_true + ":");
-        out.push_back("addi " + regName(rd) + ", $r0, 1");
-        out.push_back(L_end + ":");
+        out.push_back("addi " + rd + ", $zero, 0");
+        out.push_back("j " + E);
+        out.push_back(T + ":");
+        out.push_back("addi " + rd + ", $zero, 1");
+        out.push_back(E + ":");
         return;
     }
 
-    // --------------------
-    // Call: dst = call f, nArgs
-    // --------------------
+    // ------------------------------------
+    // beq
+    // ------------------------------------
+    if (op == "beq") {
+        std::string rd = allocateRegister(I.dst);
+        std::string rs = (I.src1=="0" ? "$zero" : allocateRegister(I.src1));
+        out.push_back("beq " + rd + ", " + rs + ", " + I.src2);
+        return;
+    }
+
+    // ------------------------------------
+    // bgt
+    // ------------------------------------
+    if (op == "bgt") {
+        std::string rd = allocateRegister(I.dst);
+        std::string rs = allocateRegister(I.src1);
+        out.push_back("bgt " + rd + ", " + rs + ", " + I.src2);
+        return;
+    }
+
+    // ------------------------------------
+    // call
+    // ------------------------------------
     if (op == "call") {
-        int rd = allocateRegister(I.dst);
+
+        saveCallerSaved(out);
+
         out.push_back("jal " + I.src1);
-        out.push_back("addi " + regName(rd) + ", $r31, 0");
+
+        restoreCallerSaved(out);
+
+        std::string rd = allocateRegister(I.dst);
+        out.push_back("addi " + rd + ", $v0, 0");
         return;
     }
 
-    // --------------------
-    // input / output
-    // --------------------
-    if (op == "input") {
-        int rd = allocateRegister(I.dst);
-        out.push_back("input " + regName(rd));
+    // ------------------------------------
+    // input/output
+    // ------------------------------------
+    if (op=="input") {
+        std::string r = allocateRegister(I.dst);
+        out.push_back("input " + r);
         return;
     }
-    if (op == "output") {
-        int rd = allocateRegister(I.dst);
-        out.push_back("output " + regName(rd));
+    if (op=="output") {
+        std::string r = allocateRegister(I.dst);
+        out.push_back("output " + r);
         return;
     }
 
     throw std::runtime_error("Unknown IR op: " + op);
+}
+
+// ========================================================
+// Register Pool Initialization
+// ========================================================
+
+void CodeGen::initRegisterPools() {
+    availableTemps = {"$t0","$t1","$t2","$t3","$t4","$t5","$t6","$t7","$t8","$t9"};
+    availableSaved = {"$s0","$s1","$s2","$s3","$s4","$s5","$s6","$s7"};
+    savedOrder     = availableSaved;
+}
+
+std::string CodeGen::allocateTemp() {
+    if (!availableTemps.empty()) {
+        std::string r = availableTemps.front();
+        availableTemps.erase(availableTemps.begin());   // 正序取出 t0→t1→t2
+        return r;
+    }
+    return "$t0"; // fallback
+}
+
+std::string CodeGen::allocateSaved() {
+    if (!availableSaved.empty()) {
+        std::string r = availableSaved.front();
+        availableSaved.erase(availableSaved.begin());
+        usedCalleeSaved[r] = true;
+        return r;
+    }
+    return allocateTemp();
+}
+
+void CodeGen::releaseRegister(const std::string &reg) {
+    if (reg.rfind("$t",0)==0)
+        availableTemps.push_back(reg);
+    else if (reg.rfind("$s",0)==0) {
+        availableSaved.push_back(reg);
+        usedCalleeSaved[reg]=false;
+    }
+}
+
+// ========================================================
+// Prologue / Epilogue
+// ========================================================
+
+void CodeGen::generatePrologue(int frameSize,
+                               std::vector<std::string> &out)
+{
+    out.push_back("# Function prologue");
+
+    out.push_back("addi $sp, $sp, -" + std::to_string(frameSize));
+
+    out.push_back("sw $fp, 1($sp)");
+    out.push_back("addi $fp, $sp, 0");
+    out.push_back("sw $ra, 2($sp)");
+
+    int offs = 3;
+    for (auto &reg : savedOrder) {
+        if (usedCalleeSaved[reg]) {
+            out.push_back("sw " + reg + ", " + std::to_string(offs) + "($sp)");
+            offs++;
+        }
+    }
+}
+
+void CodeGen::generateEpilogue(int frameSize,
+                               std::vector<std::string> &out)
+{
+    int offs = 3;
+    for (auto &reg : savedOrder) {
+        if (usedCalleeSaved[reg]) {
+            out.push_back("lw " + reg + ", " + std::to_string(offs) + "($fp)");
+            offs++;
+        }
+    }
+
+    out.push_back("# Function epilogue");
+    out.push_back("lw $ra, 2($fp)");
+    out.push_back("lw $fp, 1($fp)");
+    out.push_back("addi $sp, $sp, " + std::to_string(frameSize));
+    out.push_back("jr $ra");
+}
+
+// ========================================================
+// Caller-saved Registers
+// ========================================================
+
+void CodeGen::saveCallerSaved(std::vector<std::string> &out) {
+    out.push_back("# Save caller-saved");
+    out.push_back("addi $sp, $sp, -10"); // reserve 10 words
+
+    for (int i=0; i<10; ++i)
+        out.push_back("sw $t" + std::to_string(i) + ", " + std::to_string(i+1) + "($sp)");
+}
+
+void CodeGen::restoreCallerSaved(std::vector<std::string> &out) {
+    for (int i=0; i<10; ++i)
+        out.push_back("lw $t" + std::to_string(i) + ", " + std::to_string(i+1) + "($sp)");
+
+    out.push_back("addi $sp, $sp, 10");
+}
+
+bool CodeGen::isMIPSRegister(const std::string &name) const {
+    return !name.empty() && name[0] == '$';
 }
