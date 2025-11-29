@@ -4,13 +4,18 @@ addi $sp, $sp, -28
 sw $fp, 1($sp)
 addi $fp, $sp, 0
 sw $ra, 2($sp)
-addi $t0, $zero, 3
+input $t0
 sw $t0, -1($fp)
-addi $t1, $zero, 5
-add $t2, $t0, $t1
-sw $t2, -2($fp)
-addi $t3, $zero, 0
-addi $v0, $t3, 0
+input $t1
+sw $t1, -2($fp)
+lw $t2, -1($fp)
+lw $t3, -2($fp)
+add $t4, $t2, $t3
+sw $t4, -3($fp)
+lw $t5, -3($fp)
+output $t5
+addi $t6, $zero, 0
+addi $v0, $t6, 0
 # Function epilogue
 lw $ra, 2($fp)
 lw $fp, 1($fp)

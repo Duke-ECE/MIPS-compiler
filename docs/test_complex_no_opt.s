@@ -12,16 +12,18 @@ lw $t2, -1($fp)
 lw $t3, -2($fp)
 add $t4, $t2, $t3
 sw $t4, -3($fp)
-addi $t5, $zero, 2
-addi $t6, $zero, 0
+lw $t5, -3($fp)
+addi $t6, $zero, 2
+addi $t7, $zero, 0
 LMD_LOOP_0:
-beq $t5, $zero, LMD_END_0
-add $t6, $t6, $t4
-addi $t5, $t5, -1
+beq $t6, $zero, LMD_END_0
+add $t7, $t7, $t5
+addi $t6, $t6, -1
 j LMD_LOOP_0
 LMD_END_0:
-sw $t6, -4($fp)
-addi $v0, $t6, 0
+sw $t7, -4($fp)
+lw $t8, -4($fp)
+addi $v0, $t8, 0
 # Function epilogue
 lw $ra, 2($fp)
 lw $fp, 1($fp)

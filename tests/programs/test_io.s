@@ -4,11 +4,15 @@ addi $sp, $sp, -28
 sw $fp, 1($sp)
 addi $fp, $sp, 0
 sw $ra, 2($sp)
-addi $t0, $zero, 3
-sw $t0, -1($fp)
-addi $t1, $zero, 5
-add $t2, $t0, $t1
-sw $t2, -2($fp)
+L0:
+addi $t0, $zero, 1
+beq $t0, $zero, L1
+input $t1
+sw $t1, -1($fp)
+lw $t2, -1($fp)
+output $t2
+j L0
+L1:
 addi $t3, $zero, 0
 addi $v0, $t3, 0
 # Function epilogue
