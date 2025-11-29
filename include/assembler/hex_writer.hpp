@@ -53,10 +53,21 @@ public:
      * @brief 生成 Intel HEX 格式字符串（不写入文件）
      * @param words 32位机器码序列
      * @param startAddress 起始地址（字地址，默认0）
-     * @return Intel HEX 格式的完整字符串
+     * @return Intel HEX 格式的完整字符串（默认 4096 行数据 + EOF）
      */
     static std::string generate(const std::vector<uint32_t>& words,
                                 uint32_t startAddress = 0);
+
+    /**
+     * @brief 生成 Intel HEX 格式字符串（指定内存深度）
+     * @param words 32位机器码序列
+     * @param startAddress 起始地址（字地址）
+     * @param depth 内存深度（总数据行数，如 4096 表示 4KB）
+     * @return Intel HEX 格式的完整字符串（depth 行数据 + EOF）
+     */
+    static std::string generate(const std::vector<uint32_t>& words,
+                                uint32_t startAddress,
+                                uint32_t depth);
 
     /**
      * @brief 生成单条 Intel HEX 记录
@@ -200,11 +211,25 @@ inline std::string HexWriter::generateRecord(uint8_t type,
 
 inline std::string HexWriter::generate(const std::vector<uint32_t>& words,
                                         uint32_t startAddress) {
+    return generate(words, startAddress, 4096);  // 默认 4KB = 4096 words
+}
+
+/**
+ * @brief 生成 Intel HEX 格式字符串（指定内存深度）
+ * @param words 32位机器码序列
+ * @param startAddress 起始地址（字地址，默认0）
+ * @param depth 内存深度（总行数，默认4096）
+ * @return Intel HEX 格式的完整字符串
+ */
+inline std::string HexWriter::generate(const std::vector<uint32_t>& words,
+                                        uint32_t startAddress,
+                                        uint32_t depth) {
     std::ostringstream oss;
     
-    for (size_t i = 0; i < words.size(); i++) {
-        uint32_t word = words[i];
-        uint32_t byteAddress = (startAddress + static_cast<uint32_t>(i)) * 4;
+    // 输出所有数据行（固定 depth 行）
+    for (uint32_t i = 0; i < depth; i++) {
+        uint32_t word = (i < words.size()) ? words[i] : 0x00000000;  // 不足的填充 0
+        uint32_t byteAddress = (startAddress + i) * 4;
         
         // 如果地址超过 16 位，需要使用扩展地址记录
         if (byteAddress > 0xFFFF) {
@@ -218,7 +243,7 @@ inline std::string HexWriter::generate(const std::vector<uint32_t>& words,
         oss << generateDataRecord(addr16, data) << "\n";
     }
     
-    // 添加 EOF 记录
+    // 添加 EOF 记录（第 4097 行）
     oss << generateEofRecord() << "\n";
     
     return oss.str();

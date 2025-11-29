@@ -21,6 +21,7 @@
 #include "isa/Registers.hpp"
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <cassert>
 #include <cstdint>
 
@@ -598,10 +599,43 @@ TEST(hello_world_program) {
         std::cout << "\n";
     }
     
-    // 生成并打印 Intel HEX
-    std::cout << "\n--- Intel HEX 输出 ---\n";
+    // 生成 Intel HEX（4096 行数据 + 1 行 EOF = 4097 行）
     std::string hexOutput = HexWriter::generate(machineCode);
-    std::cout << hexOutput;
+    
+    // 统计行数
+    int lineCount = 0;
+    std::istringstream iss(hexOutput);
+    std::string line;
+    std::vector<std::string> allLines;
+    while (std::getline(iss, line)) {
+        if (!line.empty()) {
+            allLines.push_back(line);
+            lineCount++;
+        }
+    }
+    
+    std::cout << "\n--- Intel HEX 输出（共 " << lineCount << " 行）---\n";
+    
+    // 打印前 15 行（实际代码）
+    std::cout << "前 15 行:\n";
+    for (int i = 0; i < 15 && i < (int)allLines.size(); i++) {
+        std::cout << "  " << std::setw(4) << (i + 1) << ": " << allLines[i] << "\n";
+    }
+    
+    // 打印最后 5 行（包括 EOF）
+    std::cout << "\n最后 5 行:\n";
+    int start = std::max(0, (int)allLines.size() - 5);
+    for (int i = start; i < (int)allLines.size(); i++) {
+        std::cout << "  " << std::setw(4) << (i + 1) << ": " << allLines[i] << "\n";
+    }
+    
+    // 验证行数（4096 数据行 + 1 EOF 行 = 4097）
+    std::cout << "\n验证: 总行数 = " << lineCount << " (预期 4097)\n";
+    ASSERT_EQ(lineCount, 4097);
+    
+    // 验证最后一行是 EOF
+    ASSERT_EQ(allLines.back(), ":00000001FF");
+    std::cout << "验证: 最后一行 = " << allLines.back() << " (EOF 记录) ✓\n";
     
     std::cout << "==============================================\n\n";
 }
@@ -720,14 +754,21 @@ TEST(intel_hex_string_output) {
 }
 
 TEST(intel_hex_empty_program) {
-    // 空程序应该只有 EOF 记录
+    // 空程序仍然输出 4096 行数据（全0）+ 1 行 EOF
     std::vector<uint32_t> empty;
     std::string hex = HexWriter::generate(empty);
     
-    // 应该只包含 EOF 记录
+    // 应该包含 EOF 记录
     ASSERT_TRUE(hex.find(":00000001FF") != std::string::npos);
-    // 第一个字符应该是 ':'（EOF 记录的开始）
+    // 第一个字符应该是 ':'
     ASSERT_TRUE(hex[0] == ':');
+    
+    // 计算行数应该是 4097
+    int recordCount = 0;
+    for (size_t i = 0; i < hex.length(); i++) {
+        if (hex[i] == ':') recordCount++;
+    }
+    ASSERT_EQ(recordCount, 4097);
 }
 
 TEST(intel_hex_multiple_words) {
@@ -745,8 +786,13 @@ TEST(intel_hex_multiple_words) {
         if (hex[i] == ':') recordCount++;
     }
     
-    // 应该有 3 个数据记录 + 1 个 EOF 记录 = 4
-    ASSERT_EQ(recordCount, 4);
+    // 现在固定输出 4096 行数据 + 1 行 EOF = 4097 行
+    ASSERT_EQ(recordCount, 4097);
+    
+    // 验证数据正确（前3个是我们的数据，后面是0填充）
+    ASSERT_TRUE(hex.find("00000000") != std::string::npos);  // 第一个 word
+    ASSERT_TRUE(hex.find("31408000") != std::string::npos);  // 第二个 word
+    ASSERT_TRUE(hex.find("FFFFFFFF") != std::string::npos);  // 第三个 word
 }
 
 TEST(intel_hex_address_increment) {
