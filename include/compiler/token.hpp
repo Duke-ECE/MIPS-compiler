@@ -14,17 +14,17 @@ enum class TokenType {
     NUMBER,
 
     // Operators
-    PLUS, MINUS, STAR, SLASH,
+    PLUS, MINUS, STAR, SLASH,// +, -, *, /
     ASSIGN,        // =
     EQ,            // ==
     NEQ,           // !=
-    LT, GT, LE, GE,
+    LT, GT, LE, GE, // <, >, <=, >=
 
     // Delimiters
-    LPAREN, RPAREN,
-    LBRACE, RBRACE,
-    SEMICOLON,
-    COMMA,
+    LPAREN, RPAREN,// (, )
+    LBRACE, RBRACE,// {, }
+    SEMICOLON,// ;
+    COMMA,// ,
 
     // End of file
     END_OF_FILE,
