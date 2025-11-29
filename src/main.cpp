@@ -41,6 +41,37 @@ void printUsage(const char* programName) {
 }
 
 /**
+ * @brief 将机器码写入 HEX 文件
+ * @param code 机器码序列
+ * @param path 输出文件路径
+ * @param wordAddressing 是否使用 word 地址（true: 地址按 word 计，false: 按 byte 计）
+ * @return 是否成功
+ */
+bool writeHex(const std::vector<uint32_t>& code, const std::string& path, bool wordAddressing = true) {
+    FileResult result = FileIO::writeHex(path, code, 0, wordAddressing);
+    if (!result.success) {
+        std::cerr << "错误: 写入 HEX 文件失败 - " << result.error << "\n";
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief 将机器码写入 MIF 文件
+ * @param code 机器码序列
+ * @param path 输出文件路径
+ * @return 是否成功
+ */
+bool writeMif(const std::vector<uint32_t>& code, const std::string& path) {
+    FileResult result = FileIO::writeMif(path, code);
+    if (!result.success) {
+        std::cerr << "错误: 写入 MIF 文件失败 - " << result.error << "\n";
+        return false;
+    }
+    return true;
+}
+
+/**
  * @brief 主函数
  */
 int main(int argc, char* argv[]) {
@@ -76,7 +107,7 @@ int main(int argc, char* argv[]) {
     std::cout << "        Duke 550 汇编器\n";
     std::cout << "============================================\n\n";
     
-    // 1. 读取源文件
+    // ==================== 1. 读取源文件 ====================
     std::cout << "[1/3] 读取源文件: " << inputPath << "\n";
     
     auto sourceOpt = FileIO::readFile(inputPath);
@@ -88,11 +119,11 @@ int main(int argc, char* argv[]) {
     const std::string& source = *sourceOpt;
     std::cout << "      读取了 " << source.length() << " 字节\n";
     
-    // 2. 汇编
+    // ==================== 2. 汇编 ====================
     std::cout << "[2/3] 汇编中...\n";
     
     Assembler assembler;
-    AssembleResult result = assembler.assembleWithResult(source);
+    AssembleResult result = assembler.assemble(source);
     
     if (!result.success) {
         std::cerr << "\n汇编失败:\n";
@@ -136,41 +167,43 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // 3. 输出文件
+    // ==================== 3. 输出文件 ====================
     std::cout << "\n[3/3] 生成输出文件...\n";
     
-    try {
-        if (format == "hex" || format == "both") {
-            // imem -> .hex（使用 word 地址）
-            std::string imemHexPath = outputBase + ".hex";
-            assembler.writeHEX(result.imem, imemHexPath, true);
-            std::cout << "      已生成 imem: " << imemHexPath << "\n";
-            
-            // dmem -> _dmem.hex（如果有数据段）
-            if (!result.dmem.empty()) {
-                std::string dmemHexPath = outputBase + "_dmem.hex";
-                // dmem 使用 word 地址输出（每个地址对应一个 word 单元）
-                assembler.writeHEX(result.dmem, dmemHexPath, true);
-                std::cout << "      已生成 dmem: " << dmemHexPath << "\n";
-            }
+    if (format == "hex" || format == "both") {
+        // imem -> .hex（使用 word 地址）
+        std::string imemHexPath = outputBase + ".hex";
+        if (!writeHex(result.imem, imemHexPath, true)) {
+            return 1;
         }
+        std::cout << "      已生成 imem: " << imemHexPath << "\n";
         
-        if (format == "mif" || format == "both") {
-            // imem -> .mif
-            std::string imemMifPath = outputBase + ".mif";
-            assembler.writeMIF(result.imem, imemMifPath);
-            std::cout << "      已生成 imem: " << imemMifPath << "\n";
-            
-            // dmem -> _dmem.mif（如果有数据段）
-            if (!result.dmem.empty()) {
-                std::string dmemMifPath = outputBase + "_dmem.mif";
-                assembler.writeMIF(result.dmem, dmemMifPath);
-                std::cout << "      已生成 dmem: " << dmemMifPath << "\n";
+        // dmem -> _dmem.hex（如果有数据段）
+        if (!result.dmem.empty()) {
+            std::string dmemHexPath = outputBase + "_dmem.hex";
+            if (!writeHex(result.dmem, dmemHexPath, true)) {
+                return 1;
             }
+            std::cout << "      已生成 dmem: " << dmemHexPath << "\n";
         }
-    } catch (const std::exception& e) {
-        std::cerr << "错误: " << e.what() << "\n";
-        return 1;
+    }
+    
+    if (format == "mif" || format == "both") {
+        // imem -> .mif
+        std::string imemMifPath = outputBase + ".mif";
+        if (!writeMif(result.imem, imemMifPath)) {
+            return 1;
+        }
+        std::cout << "      已生成 imem: " << imemMifPath << "\n";
+        
+        // dmem -> _dmem.mif（如果有数据段）
+        if (!result.dmem.empty()) {
+            std::string dmemMifPath = outputBase + "_dmem.mif";
+            if (!writeMif(result.dmem, dmemMifPath)) {
+                return 1;
+            }
+            std::cout << "      已生成 dmem: " << dmemMifPath << "\n";
+        }
     }
     
     std::cout << "\n============================================\n";

@@ -1,115 +1,156 @@
 /**
  * @file assembler_main.cpp
- * @brief 汇编器模块入口
+ * @brief 汇编器独立入口
  * 
- * 实现 Assembler 类，提供汇编器的顶层接口。
- * 该模块负责将汇编源代码转换为机器码，并支持输出为 HEX/MIF 格式。
+ * 提供汇编器的命令行接口，将汇编源文件转换为机器码文件。
  * 
- * 注意：此文件不包含 main() 函数，仅作为汇编器功能模块。
- * main() 函数位于 src/main.cpp 中。
+ * 使用方法:
+ *   ./assembler <input.s> -o <output_base> [-f format]
+ * 
+ * 参数:
+ *   input.s       汇编源文件
+ *   -o output     输出文件名（不含扩展名）
+ *   -f format     输出格式: hex, mif, both (默认 both)
+ * 
+ * 示例:
+ *   ./assembler test.s -o test           # 输出 test.hex 和 test.mif
+ *   ./assembler test.s -o test -f hex    # 只输出 test.hex
  */
 
+#include <iostream>
+#include <string>
+
 #include "assembler/assembler.hpp"
-#include "assembler/asm_parser.hpp"
-#include "assembler/asm_encoder.hpp"
 #include "utils/file_io.hpp"
-#include <stdexcept>
-#include <sstream>
 
-namespace assembler {
+// 打印使用说明
+void printUsage(const char* prog) {
+    std::cerr << "Usage: " << prog << " <input.s> -o <output_base> [-f format]\n";
+    std::cerr << "Options:\n";
+    std::cerr << "  -o output     输出文件名（不含扩展名）\n";
+    std::cerr << "  -f format     输出格式: hex, mif, both (默认 both)\n";
+    std::cerr << "Example:\n";
+    std::cerr << "  " << prog << " test.s -o test\n";
+    std::cerr << "  " << prog << " test.s -o test -f hex\n";
+}
 
-// ============================================================================
-// Assembler 类实现
-// ============================================================================
+int main(int argc, char** argv) {
+    if (argc < 4) {
+        printUsage(argv[0]);
+        return 1;
+    }
 
-std::vector<uint32_t> Assembler::assemble(const std::string& asmText) {
-    AssembleResult result = assembleWithResult(asmText);
+    std::string inputPath;
+    std::string outputBase;
+    std::string format = "both";
+
+    // 解析命令行参数
+    inputPath = argv[1];
     
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        if (arg == "-o" && i + 1 < argc) {
+            outputBase = argv[++i];
+        } else if (arg == "-f" && i + 1 < argc) {
+            format = argv[++i];
+        } else if (arg == "-h" || arg == "--help") {
+            printUsage(argv[0]);
+            return 0;
+        }
+    }
+
+    if (outputBase.empty()) {
+        std::cerr << "[Error] Missing output path. Use -o <output_base>\n";
+        printUsage(argv[0]);
+        return 1;
+    }
+
+    // ============================
+    // 1. 读取汇编源文件
+    // ============================
+    auto inputOpt = utils::FileIO::readFile(inputPath);
+    if (!inputOpt.has_value()) {
+        std::cerr << "[Error] Failed to read input file: " << inputPath << "\n";
+        return 1;
+    }
+    std::string asmText = *inputOpt;
+
+    // ============================
+    // 2. 调用 Assembler（Assembly → Machine Code）
+    // ============================
+    assembler::Assembler assembler;
+    assembler::AssembleResult result;
+
+    try {
+        result = assembler.assemble(asmText);
+    } catch (const std::exception& e) {
+        std::cerr << "[Assembler Error] " << e.what() << "\n";
+        return 1;
+    }
+
     if (!result.success) {
-        // 构建错误消息
-        std::ostringstream oss;
-        oss << "汇编失败:\n";
+        std::cerr << "[Assembler Error] Assembly failed:\n";
         for (const auto& error : result.errors) {
-            oss << "  " << error << "\n";
+            std::cerr << "  " << error << "\n";
         }
-        throw std::runtime_error(oss.str());
+        return 1;
     }
-    
-    return result.code;
-}
 
-AssembleResult Assembler::assembleWithResult(const std::string& asmText) {
-    AssembleResult result;
-    lastErrors.clear();
-    lastWarnings.clear();
-    
-    // 1. 语法分析（包含词法分析）
-    AsmParser parser(asmText);
-    ParseResult parseResult = parser.parse();
-    
-    if (!parseResult.success) {
-        result.success = false;
-        for (const auto& error : parseResult.errors) {
-            std::ostringstream oss;
-            oss << "行 " << error.line << ", 列 " << error.column << ": "
-                << asmErrorTypeToString(error.type) << " - " << error.message;
-            result.errors.push_back(oss.str());
+    // 打印警告
+    for (const auto& warning : result.warnings) {
+        std::cerr << "[Warning] " << warning << "\n";
+    }
+
+    std::cout << "Assembly successful!\n";
+    std::cout << "  Generated " << result.imem.size() << " instructions (imem)\n";
+    std::cout << "  Generated " << result.dmem.size() << " data words (dmem)\n";
+
+    // ============================
+    // 3. 输出机器码文件
+    // ============================
+    if (format == "hex" || format == "both") {
+        // 输出 imem.hex
+        std::string imemHexPath = outputBase + ".hex";
+        auto hexResult = utils::FileIO::writeHex(imemHexPath, result.imem, 0, true);
+        if (!hexResult.success) {
+            std::cerr << "[Error] Failed to write HEX file: " << hexResult.error << "\n";
+            return 1;
         }
-        lastErrors = result.errors;
-        return result;
-    }
-    
-    // 复制警告
-    result.warnings = parseResult.warnings;
-    lastWarnings = result.warnings;
-    
-    // 2. 编码生成
-    AsmEncoder encoder;
-    EncodeResult encodeResult = encoder.encode(parseResult);
-    
-    if (!encodeResult.success) {
-        result.success = false;
-        for (const auto& error : encodeResult.errors) {
-            std::ostringstream oss;
-            oss << "行 " << error.line << ": "
-                << encoderErrorTypeToString(error.type) << " - " << error.message;
-            result.errors.push_back(oss.str());
+        std::cout << "  Written: " << imemHexPath << "\n";
+
+        // 输出 dmem.hex（如果有数据段）
+        if (!result.dmem.empty()) {
+            std::string dmemHexPath = outputBase + "_dmem.hex";
+            auto dmemHexResult = utils::FileIO::writeHex(dmemHexPath, result.dmem, 0, true);
+            if (!dmemHexResult.success) {
+                std::cerr << "[Error] Failed to write dmem HEX file: " << dmemHexResult.error << "\n";
+                return 1;
+            }
+            std::cout << "  Written: " << dmemHexPath << "\n";
         }
-        lastErrors = result.errors;
-        return result;
     }
-    
-    // 3. 提取指令内存（代码段 -> imem）
-    result.success = true;
-    result.imem.reserve(encodeResult.instructions.size());
-    for (const auto& instr : encodeResult.instructions) {
-        result.imem.push_back(instr.machineCode);
-    }
-    
-    // 4. 提取数据内存（数据段 -> dmem）
-    result.dmem.reserve(parseResult.dataWords.size());
-    for (const auto& dataWord : parseResult.dataWords) {
-        result.dmem.push_back(dataWord.value);
-    }
-    
-    // 5. code 保持兼容（仅包含 imem）
-    result.code = result.imem;
-    
-    return result;
-}
 
-void Assembler::writeMIF(const std::vector<uint32_t>& code, const std::string& path) {
-    utils::FileResult fileResult = utils::FileIO::writeMif(path, code);
-    if (!fileResult.success) {
-        throw std::runtime_error("写入 MIF 文件失败: " + fileResult.error);
-    }
-}
+    if (format == "mif" || format == "both") {
+        // 输出 imem.mif
+        std::string imemMifPath = outputBase + ".mif";
+        auto mifResult = utils::FileIO::writeMif(imemMifPath, result.imem);
+        if (!mifResult.success) {
+            std::cerr << "[Error] Failed to write MIF file: " << mifResult.error << "\n";
+            return 1;
+        }
+        std::cout << "  Written: " << imemMifPath << "\n";
 
-void Assembler::writeHEX(const std::vector<uint32_t>& code, const std::string& path, bool wordAddressing) {
-    utils::FileResult fileResult = utils::FileIO::writeHex(path, code, 0, wordAddressing);
-    if (!fileResult.success) {
-        throw std::runtime_error("写入 HEX 文件失败: " + fileResult.error);
+        // 输出 dmem.mif（如果有数据段）
+        if (!result.dmem.empty()) {
+            std::string dmemMifPath = outputBase + "_dmem.mif";
+            auto dmemMifResult = utils::FileIO::writeMif(dmemMifPath, result.dmem);
+            if (!dmemMifResult.success) {
+                std::cerr << "[Error] Failed to write dmem MIF file: " << dmemMifResult.error << "\n";
+                return 1;
+            }
+            std::cout << "  Written: " << dmemMifPath << "\n";
+        }
     }
-}
 
-} // namespace assembler
+    return 0;
+}
