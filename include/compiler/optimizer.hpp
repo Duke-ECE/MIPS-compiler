@@ -15,9 +15,10 @@ public:
     IRProgram optimize(const IRProgram &prog);
 
 private:
-    // ===== 3 个优化 Pass =====
+    // ===== 4 个优化 Pass =====
     bool propagateConstants(std::vector<IRInstruction> &insts);
     bool propagateCopies(std::vector<IRInstruction> &insts);
+    bool eliminateLoadStore(std::vector<IRInstruction> &insts);
     bool eliminateDeadTemps(std::vector<IRInstruction> &insts);
 
     // ===== 工具函数 =====
