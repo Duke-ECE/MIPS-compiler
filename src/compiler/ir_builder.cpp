@@ -38,7 +38,9 @@ void IRBuilder::genFunction(const ASTFunction *node) {
     localVars.clear();
     hasExplicitReturn = false;
     
-    program.emit({ "label", node->name, "", "" });
+    // 为函数标签添加前缀，避免与MIPS指令关键字冲突
+    std::string funcLabel = "_func_" + node->name;
+    program.emit({ "label", funcLabel, "", "" });
     
     // 计算栈帧大小（预扫描）
     calculateFrameSize(node);
@@ -243,6 +245,22 @@ std::string IRBuilder::genNumber(const ASTNumberExpr *node) {
 }
 
 std::string IRBuilder::genCall(const ASTCallExpr *node) {
+    // 特殊处理内建函数 input
+    if (node->callee == "input") {
+        std::string tmp = newTemp();
+        program.emit({ "input", tmp, "", "" });
+        return tmp;
+    }
+    
+    // 特殊处理内建函数 output
+    if (node->callee == "output") {
+        if (!node->arguments.empty()) {
+            std::string arg = genExpr(node->arguments[0].get());
+            program.emit({ "output", arg, "", "" });
+        }
+        return ""; // output 无返回值
+    }
+    
     // 生成参数表达式
     std::vector<std::string> args;
     for (auto &arg : node->arguments) {
@@ -254,9 +272,10 @@ std::string IRBuilder::genCall(const ASTCallExpr *node) {
         program.emit({ "param", args[i], std::to_string(i), "" });
     }
     
-    // 生成函数调用
+    // 生成函数调用（为用户函数添加前缀）
     std::string dst = newTemp();
-    program.emit({ "call", dst, node->callee, std::to_string(args.size()) });
+    std::string funcLabel = "_func_" + node->callee;
+    program.emit({ "call", dst, funcLabel, std::to_string(args.size()) });
     
     return dst;
 }

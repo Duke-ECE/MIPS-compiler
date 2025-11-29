@@ -90,10 +90,12 @@ std::string Compiler::compileToAssembly(const std::string &sourceCode) {
         IRProgram ir = runIR(ast.get());
         
         // ---------- 优化 ----------
+        // 临时禁用优化器
         IRProgram optimizedIR = runOptimizer(ir);
 
         // ---------- 后端 ----------
-        auto asmLines = runCodeGen(optimizedIR);
+        // auto asmLines = runCodeGen(ir);  // 使用未优化的IR
+        auto asmLines = runCodeGen(optimizedIR);// 使用优化后的IR
 
         // ---------- 合并成字符串 ----------
         std::ostringstream out;

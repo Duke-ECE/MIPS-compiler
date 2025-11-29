@@ -14,6 +14,11 @@ std::string CodeGen::allocateRegister(const std::string &var) {
     if (var == "0" || var == "$r0" || var == "$zero")
         return "$zero";
 
+    // 如果已经是寄存器名（以$开头），直接返回
+    if (!var.empty() && var[0] == '$') {
+        return var;
+    }
+
     auto it = regMap.find(var);
     if (it != regMap.end())
         return it->second;
@@ -38,9 +43,25 @@ std::string CodeGen::labelName(const std::string &name) const {
 
 std::vector<std::string>
 CodeGen::generateAssembly(const IRProgram &program) {
+    // 两遍处理：
+    // 第一遍：进行寄存器分配（不生成代码）
+    std::vector<std::string> dummy;
+    for (auto &inst : program.instructions) {
+        translate(inst, dummy);
+    }
+    
+    // 重置寄存器池但保留 usedCalleeSaved 信息
+    auto savedUsage = usedCalleeSaved;  // 保存第一遍的结果
+    initRegisterPools();
+    usedCalleeSaved = savedUsage;  // 恢复使用信息
+    regMap.clear();
+    currentFrameSize = 0;
+    
+    // 第二遍：生成实际代码
     std::vector<std::string> out;
-    for (auto &inst : program.instructions)
+    for (auto &inst : program.instructions) {
         translate(inst, out);
+    }
     return out;
 }
 
@@ -294,13 +315,13 @@ void CodeGen::translate(const IRInstruction &I,
     // input/output
     // ------------------------------------
     if (op=="input") {
-        std::string r = allocateRegister(I.dst);
-        out.push_back("input " + r);
+        std::string rd = allocateRegister(I.dst);
+        out.push_back("input " + rd);
         return;
     }
     if (op=="output") {
-        std::string r = allocateRegister(I.dst);
-        out.push_back("output " + r);
+        std::string rs = allocateRegister(I.dst);
+        out.push_back("output " + rs);
         return;
     }
 
@@ -323,7 +344,15 @@ std::string CodeGen::allocateTemp() {
         availableTemps.erase(availableTemps.begin());   // 正序取出 t0→t1→t2
         return r;
     }
-    return "$t0"; // fallback
+    // 临时寄存器用完，使用 saved 寄存器作为 fallback
+    if (!availableSaved.empty()) {
+        std::string r = availableSaved.front();
+        availableSaved.erase(availableSaved.begin());
+        usedCalleeSaved[r] = true;
+        return r;
+    }
+    // 所有寄存器都用完了，这种情况需要寄存器溢出
+    throw std::runtime_error("Out of registers - need register spilling");
 }
 
 std::string CodeGen::allocateSaved() {
