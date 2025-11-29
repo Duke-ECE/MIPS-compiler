@@ -52,7 +52,19 @@ IRProgram Compiler::runIR(const ASTProgram *program) {
 }
 
 /*****************************************
- * 5. CodeGen 阶段 (IR → Assembly)
+ * 5. Optimizer 阶段 (IR → 优化的IR)
+ *****************************************/
+IRProgram Compiler::runOptimizer(const IRProgram &program) {
+    try {
+        Optimizer opt;
+        return opt.optimize(program);
+    } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("Optimizer error: ") + e.what());
+    }
+}
+
+/*****************************************
+ * 6. CodeGen 阶段 (IR → Assembly)
  *****************************************/
 std::vector<std::string>
 Compiler::runCodeGen(const IRProgram &program) {
@@ -76,9 +88,12 @@ std::string Compiler::compileToAssembly(const std::string &sourceCode) {
 
         // ---------- 中端 ----------
         IRProgram ir = runIR(ast.get());
+        
+        // ---------- 优化 ----------
+        IRProgram optimizedIR = runOptimizer(ir);
 
         // ---------- 后端 ----------
-        auto asmLines = runCodeGen(ir);
+        auto asmLines = runCodeGen(optimizedIR);
 
         // ---------- 合并成字符串 ----------
         std::ostringstream out;
