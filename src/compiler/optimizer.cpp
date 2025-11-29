@@ -103,6 +103,13 @@ bool Optimizer::propagateCopies(vector<IRInstruction> &insts) {
 
         sub(ins.src1);
         sub(ins.src2);
+        
+        // 对于某些指令（如ret），dst字段也可能包含要传播的变量
+        // 例如：ret t8 需要传播为 ret t7
+        // 但要注意：不要传播赋值指令的dst（那是定义，不是使用）
+        if (ins.op == "ret" || ins.op == "param") {
+            sub(ins.dst);
+        }
     }
 
     return changed;
