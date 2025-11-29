@@ -52,7 +52,7 @@ void IRBuilder::genFunction(const ASTFunction *node) {
         if (i < 4) {
             // 参数通过$a0-$a3传递，需要存储到栈帧
             int offset = allocateLocalVar(param);
-            program.emit({ "store", "$a" + std::to_string(i), std::to_string(offset) + "(fp)", "" });
+            program.emit({ "store", "$a" + std::to_string(i), std::to_string(offset), "" });
         } else {
             // 参数已在栈上，记录其位置
             int offset = 1 + (i - 4); // 参数在fp之上（word addressed）
@@ -108,7 +108,7 @@ void IRBuilder::genVarDecl(const ASTVarDecl *node) {
     
     if (node->initExpr) {
         std::string rhs = genExpr(node->initExpr.get());
-        program.emit({ "store", rhs, std::to_string(offset) + "(fp)", "" });
+        program.emit({ "store", rhs, std::to_string(offset), "" });
     }
 }
 
@@ -228,7 +228,7 @@ std::string IRBuilder::genIdentifier(const ASTIdentifierExpr *node) {
     if (it != localVars.end()) {
         // 从栈帧加载变量
         std::string temp = newTemp();
-        program.emit({ "load", temp, std::to_string(it->second) + "(fp)", "" });
+        program.emit({ "load", temp, std::to_string(it->second), "" });
         return temp;
     }
     
@@ -268,7 +268,7 @@ std::string IRBuilder::genAssign(const ASTAssignExpr *node) {
     auto it = localVars.find(node->name);
     if (it != localVars.end()) {
         // 存储到栈帧
-        program.emit({ "store", rhs, std::to_string(it->second) + "(fp)", "" });
+        program.emit({ "store", rhs, std::to_string(it->second), "" });
         return rhs;
     }
     
