@@ -32,10 +32,7 @@ void IRBuilder::genProgram(const ASTProgram *node) {
 }
 
 void IRBuilder::genFunction(const ASTFunction *node) {
-    // 函数入口标签
     program.emit({ "label", node->name, "", "" });
-
-    // 生成函数体
     genBlock(node->body.get());
 }
 
@@ -86,13 +83,12 @@ void IRBuilder::genIf(const ASTIf *node) {
     std::string labelElse = "L" + std::to_string(tempCounter++);
     std::string labelEnd  = "L" + std::to_string(tempCounter++);
 
-    // if not cond goto else
-    program.emit({ "brz", cond, labelElse, "" }); // brz x L  = if x==0 goto L
+    // 替换 brz → beq cond, 0, labelElse
+    program.emit({ "beq", cond, "0", labelElse });
 
     genStmt(node->thenBranch.get());
     program.emit({ "jmp", labelEnd, "", "" });
 
-    // else block
     program.emit({ "label", labelElse, "", "" });
     if (node->elseBranch) {
         genStmt(node->elseBranch.get());
@@ -108,7 +104,9 @@ void IRBuilder::genWhile(const ASTWhile *node) {
     program.emit({ "label", labelStart, "", "" });
 
     std::string cond = genExpr(node->condition.get());
-    program.emit({ "brz", cond, labelEnd, "" });
+
+    // 替换 brz → beq cond, 0, labelEnd
+    program.emit({ "beq", cond, "0", labelEnd });
 
     genStmt(node->body.get());
     program.emit({ "jmp", labelStart, "", "" });
@@ -180,7 +178,7 @@ std::string IRBuilder::genUnary(const ASTUnaryExpr *node) {
 
     if (node->op == ASTUnaryOpKind::Neg) {
         program.emit({ "neg", dst, src, "" });
-    } else { // !
+    } else {
         program.emit({ "not", dst, src, "" });
     }
 
@@ -198,22 +196,12 @@ std::string IRBuilder::genNumber(const ASTNumberExpr *node) {
 }
 
 std::string IRBuilder::genCall(const ASTCallExpr *node) {
-    // 先生成参数
-    std::vector<std::string> argTemps;
-    for (auto &arg : node->arguments) {
-        argTemps.push_back(genExpr(arg.get()));
-    }
+    std::vector<std::string> args;
+    for (auto &arg : node->arguments)
+        args.push_back(genExpr(arg.get()));
 
-    // call 指令格式：call dst funcName argCount ...
     std::string dst = newTemp();
-
-    IRInstruction inst;
-    inst.op = "call";
-    inst.dst = dst;
-    inst.src1 = node->callee;
-    inst.src2 = std::to_string(argTemps.size());  // arg count
-    program.emit(inst);
-
+    program.emit({ "call", dst, node->callee, std::to_string(args.size()) });
     return dst;
 }
 

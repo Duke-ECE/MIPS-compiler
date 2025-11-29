@@ -2,12 +2,16 @@
 #include <sstream>
 #include <stdexcept>
 
-CodeGen::CodeGen() {
-}
+CodeGen::CodeGen() {}
 
+// 常量 "0" → $r0
 int CodeGen::allocateRegister(const std::string &var) {
+    if (var == "0")
+        return 0;
+
     if (regMap.count(var)) return regMap[var];
-    int id = regMap.size() + 1;  // r1, r2, r3...
+
+    int id = regMap.size() + 1;  // 分配 r1, r2, r3...
     regMap[var] = id;
     return id;
 }
@@ -42,7 +46,7 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // jmp label
+    // Jump
     // --------------------
     if (op == "jmp") {
         out.push_back("j " + labelName(I.dst));
@@ -50,7 +54,7 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // ret value → jr $value
+    // Return
     // --------------------
     if (op == "ret") {
         if (!I.dst.empty()) {
@@ -63,18 +67,14 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // mov dst, src
-    // immediate or register
-    // using addi
+    // MOV
     // --------------------
     if (op == "mov") {
         int rd = allocateRegister(I.dst);
 
-        // immediate?
         bool isImm = true;
-        for (char c : I.src1) {
-            if (!isdigit(c) && c != '-') { isImm = false; break; }
-        }
+        for (char c : I.src1)
+            if (!isdigit(c) && c!='-') isImm = false;
 
         if (isImm) {
             out.push_back("addi " + regName(rd) + ", $r0, " + I.src1);
@@ -86,7 +86,7 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // add / sub / and / or
+    // add/sub/and/or
     // --------------------
     if (op == "add" || op == "sub" ||
         op == "and" || op == "or")
@@ -94,20 +94,17 @@ void CodeGen::translate(const IRInstruction &I,
         int rd = allocateRegister(I.dst);
         int rs = allocateRegister(I.src1);
         int rt = allocateRegister(I.src2);
+
         out.push_back(op + " " + regName(rd) + ", "
-                           + regName(rs) + ", "
-                           + regName(rt));
+                             + regName(rs) + ", "
+                             + regName(rt));
         return;
     }
 
     // --------------------
-    // mul / div → software expansion
+    // mul/div (software)
     // --------------------
     if (op == "mul" || op == "div") {
-        // We expand "mul" as repeated addition
-        // And "div" as repeated subtraction
-        // (simple but valid on your ISA)
-
         int rd = allocateRegister(I.dst);
         int a  = allocateRegister(I.src1);
         int b  = allocateRegister(I.src2);
@@ -117,11 +114,9 @@ void CodeGen::translate(const IRInstruction &I,
         std::string L_end  = "LMD_END_"  + std::to_string(lbl);
         lbl++;
 
-        // clear rd = 0
         out.push_back("addi " + regName(rd) + ", $r0, 0");
 
         if (op == "mul") {
-            // multiply rd = a * b
             out.push_back(L_loop + ":");
             out.push_back("beq " + regName(b) + ", $r0, " + L_end);
             out.push_back("add " + regName(rd) + ", " + regName(rd) + ", " + regName(a));
@@ -129,7 +124,6 @@ void CodeGen::translate(const IRInstruction &I,
             out.push_back("j " + L_loop);
             out.push_back(L_end + ":");
         } else {
-            // divide rd = a / b (we count how many times b fits into a)
             out.push_back(L_loop + ":");
             out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_end);
             out.push_back("sub " + regName(a) + ", " + regName(a) + ", " + regName(b));
@@ -137,12 +131,12 @@ void CodeGen::translate(const IRInstruction &I,
             out.push_back("j " + L_loop);
             out.push_back(L_end + ":");
         }
+
         return;
     }
 
     // --------------------
-    // Unary neg: x = -y → sub x, r0, y
-    // (ISA has sub)
+    // Unary neg
     // --------------------
     if (op == "neg") {
         int rd = allocateRegister(I.dst);
@@ -152,7 +146,7 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // Unary not: x = !y
+    // Unary not
     // --------------------
     if (op == "not") {
         int rd = allocateRegister(I.dst);
@@ -173,53 +167,79 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // --------------------
-    // Comparisons
-    // IR: dst = lt a b
+    // IR-level comparison → assembly
     // --------------------
-    if (op == "lt" || op == "le" ||
-        op == "gt" || op == "ge" ||
-        op == "eq" || op == "ne")
+    if (op=="lt"||op=="le"||op=="gt"||op=="ge"||op=="eq"||op=="ne")
     {
         int rd = allocateRegister(I.dst);
         int a  = allocateRegister(I.src1);
         int b  = allocateRegister(I.src2);
 
         static int lbl = 0;
-        std::string L_true = "LCMP_T_" + std::to_string(lbl);
-        std::string L_end  = "LCMP_E_" + std::to_string(lbl);
+        std::string LT = "LCMP_T_" + std::to_string(lbl);
+        std::string LE = "LCMP_E_" + std::to_string(lbl);
         lbl++;
 
-        if (op == "lt") {
-            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_true);
+        if (op=="lt") {
+            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + LT);
         }
-        else if (op == "gt") {
-            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + L_true);
+        else if (op=="gt") {
+            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + LT);
         }
-        else if (op == "eq") {
-            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + L_true);
+        else if (op=="eq") {
+            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + LT);
         }
-        else if (op == "ne") {
-            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + L_end);
+        else if (op=="ne") {
+            out.push_back("beq " + regName(a) + ", " + regName(b) + ", " + LE);
         }
-        else if (op == "le") {
-            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + L_end);
-            out.push_back("j " + L_true);
+        else if (op=="le") {
+            out.push_back("bgt " + regName(a) + ", " + regName(b) + ", " + LE);
+            out.push_back("j " + LT);
         }
-        else if (op == "ge") {
-            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + L_end);
-            out.push_back("j " + L_true);
+        else if (op=="ge") {
+            out.push_back("bgt " + regName(b) + ", " + regName(a) + ", " + LE);
+            out.push_back("j " + LT);
         }
 
         out.push_back("addi " + regName(rd) + ", $r0, 0");
-        out.push_back("j " + L_end);
-        out.push_back(L_true + ":");
+        out.push_back("j " + LE);
+        out.push_back(LT + ":");
         out.push_back("addi " + regName(rd) + ", $r0, 1");
-        out.push_back(L_end + ":");
+        out.push_back(LE + ":");
         return;
     }
 
     // --------------------
-    // Call: dst = call f, nArgs
+    // IR-level beq(rd, rs, label)
+    // --------------------
+    if (op == "beq") {
+        int rd = allocateRegister(I.dst);
+        int rs = allocateRegister(I.src1);
+        out.push_back("beq " + regName(rd) + ", " + regName(rs) + ", " + I.src2 );
+        return;
+    }
+
+    // --------------------
+    // IR-level bgt
+    // --------------------
+    if (op == "bgt") {
+        int rd = allocateRegister(I.dst);
+        int rs = allocateRegister(I.src1);
+        out.push_back("bgt " + regName(rd) + ", " + regName(rs) + ", " + I.src2 );
+        return;
+    }
+
+    // --------------------
+    // Optional: IR-level brz cond, label
+    // --------------------
+    if (op == "brz") {
+        int r = allocateRegister(I.dst);
+        out.push_back("beq " + regName(r) + ", $r0, " + I.src1 );
+        return;
+    }
+
+    // --------------------
+    // Call
     // --------------------
     if (op == "call") {
         int rd = allocateRegister(I.dst);
