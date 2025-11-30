@@ -70,6 +70,7 @@ private:
     std::string genNumber(const ASTNumberExpr *node);
     std::string genCall(const ASTCallExpr *node);
     std::string genAssign(const ASTAssignExpr *node);
+    std::string genStore(const ASTStoreExpr *node);
 };
 
 #endif // IR_BUILDER_HPP

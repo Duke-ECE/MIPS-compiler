@@ -183,8 +183,10 @@ std::string IRBuilder::genExpr(const ASTExpression *expr) {
             return genCall(static_cast<const ASTCallExpr*>(expr));
         case ASTNodeKind::AssignExpr:
             return genAssign(static_cast<const ASTAssignExpr*>(expr));
+        case ASTNodeKind::StoreExpr:
+            return genStore(static_cast<const ASTStoreExpr*>(expr));
         default:
-            throw std::runtime_error("IRBuilder: unknown expression kind");
+            throw std::runtime_error("Unknown expression kind in IR generation");
     }
 }
 
@@ -217,6 +219,11 @@ std::string IRBuilder::genUnary(const ASTUnaryExpr *node) {
 
     if (node->op == ASTUnaryOpKind::Neg) {
         program.emit({ "neg", dst, src, "" });
+    } else if (node->op == ASTUnaryOpKind::Deref) {
+        // 解引用：*ptr
+        // 生成 load 指令：dst = *(src)
+        // 格式：load dst, src
+        program.emit({ "load", dst, src, "" });
     } else {
         program.emit({ "not", dst, src, "" });
     }
@@ -294,6 +301,20 @@ std::string IRBuilder::genAssign(const ASTAssignExpr *node) {
     // 全局变量或其他情况
     program.emit({ "mov", node->name, rhs, "" });
     return node->name;
+}
+
+std::string IRBuilder::genStore(const ASTStoreExpr *node) {
+    // *address = value
+    // 首先计算地址表达式
+    std::string addr = genExpr(node->address.get());
+    // 然后计算值表达式
+    std::string value = genExpr(node->value.get());
+    
+    // 生成 store 指令：*(addr) = value
+    // 格式：store value, addr
+    program.emit({ "store", value, addr, "" });
+    
+    return value; // 返回存储的值
 }
 
 // MIPS栈帧管理方法实现

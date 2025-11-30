@@ -11,6 +11,38 @@ ast.hpp: MIPS 编译器的抽象语法树定义
 #include <vector>
 #include <ostream>
 
+// -------------------- 类型系统 --------------------
+
+// 类型种类
+enum class TypeKind {
+    INT,        // int
+    POINTER     // int*
+};
+
+// 类型描述
+struct Type {
+    TypeKind kind;
+    Type* baseType;  // 指针类型指向的基础类型
+    
+    Type(TypeKind k, Type* base = nullptr) 
+        : kind(k), baseType(base) {}
+    
+    // 检查是否为指针类型
+    bool isPointer() const { return kind == TypeKind::POINTER; }
+    
+    // 检查是否为整型
+    bool isInt() const { return kind == TypeKind::INT; }
+    
+    // 获取类型字符串表示
+    std::string toString() const {
+        if (kind == TypeKind::INT) return "int";
+        if (kind == TypeKind::POINTER && baseType) {
+            return baseType->toString() + "*";
+        }
+        return "unknown";
+    }
+};
+
 // -------------------- 节点类型枚举 --------------------
 
 enum class ASTNodeKind {
@@ -31,7 +63,8 @@ enum class ASTNodeKind {
     IdentifierExpr,
     NumberExpr,
     CallExpr,
-    AssignExpr
+    AssignExpr,
+    StoreExpr      // 指针赋值表达式：*ptr = value
 };
 
 // 二元运算符
@@ -53,7 +86,8 @@ enum class ASTBinaryOpKind {
 // 一元运算符
 enum class ASTUnaryOpKind {
     Neg,    // -x
-    Not     // !x
+    Not,    // !x
+    Deref   // *x (解引用)
 };
 
 // -------------------- AST 基类 --------------------
@@ -122,7 +156,8 @@ public:
 // int x = expr;
 class ASTVarDecl : public ASTStatement {
 public:
-    std::string typeName;                        // int
+    std::string typeName;                        // "int" 或 "int*"
+    bool isPointer;                              // 是否为指针类型
     std::string name;
     std::unique_ptr<ASTExpression> initExpr;     // 可能为 nullptr
 
@@ -228,6 +263,16 @@ public:
 
     ASTAssignExpr();
     ~ASTAssignExpr() override;
+};
+
+// 指针存储表达式：*addr = value
+class ASTStoreExpr : public ASTExpression {
+public:
+    std::unique_ptr<ASTExpression> address;  // 地址表达式
+    std::unique_ptr<ASTExpression> value;    // 要存储的值
+    
+    ASTStoreExpr();
+    ~ASTStoreExpr() override;
 };
 
 // -------------------- 调试输出（可选） --------------------

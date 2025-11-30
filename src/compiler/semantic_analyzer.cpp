@@ -111,7 +111,7 @@ void SemanticAnalyzer::visitBlock(ASTBlock *node) {
 // ===== Variable Declaration =====
 void SemanticAnalyzer::visitVarDecl(ASTVarDecl *node) {
     std::string name = node->name;
-    std::string type = node->typeName; // currently "int"
+    std::string type = node->typeName; // "int" 或 "int*"
 
     if (!symbols.declare(name, type)) {
         throw SemanticError("Variable redeclared: " + name);
@@ -119,7 +119,14 @@ void SemanticAnalyzer::visitVarDecl(ASTVarDecl *node) {
 
     if (node->initExpr) {
         std::string t = visitExpr(node->initExpr.get());
-        ensureType(t, type, "Type mismatch in initialization of variable " + name);
+        // 对于指针类型，允许整数初始化（地址值）
+        if (node->isPointer) {
+            if (t != "int" && t != type) {
+                throw SemanticError("Pointer initializer must be int or compatible pointer type for " + name);
+            }
+        } else {
+            ensureType(t, type, "Type mismatch in initialization of variable " + name);
+        }
     }
 }
 
@@ -172,8 +179,10 @@ std::string SemanticAnalyzer::visitExpr(ASTExpression *expr) {
             return visitCall(static_cast<ASTCallExpr*>(expr));
         case ASTNodeKind::AssignExpr:
             return visitAssign(static_cast<ASTAssignExpr*>(expr));
+        case ASTNodeKind::StoreExpr:
+            return visitStore(static_cast<ASTStoreExpr*>(expr));
         default:
-            throw SemanticError("Unknown expression node");
+            throw SemanticError("Unknown expression kind");
     }
 }
 
@@ -182,6 +191,18 @@ std::string SemanticAnalyzer::visitBinaryExpr(ASTBinaryExpr *node) {
     std::string lt = visitExpr(node->left.get());
     std::string rt = visitExpr(node->right.get());
 
+    // 指针算术：pointer + int 或 pointer - int
+    if (node->op == ASTBinaryOpKind::Add || node->op == ASTBinaryOpKind::Sub) {
+        if (isPointerType(lt) && rt == "int") {
+            // pointer + int -> pointer
+            return lt;
+        } else if (lt == "int" && isPointerType(rt) && node->op == ASTBinaryOpKind::Add) {
+            // int + pointer -> pointer
+            return rt;
+        }
+    }
+
+    // 普通算术和比较操作：要求两个 int
     if (lt != "int" || rt != "int") {
         throw SemanticError("Binary operator requires int operands");
     }
@@ -191,8 +212,19 @@ std::string SemanticAnalyzer::visitBinaryExpr(ASTBinaryExpr *node) {
 // ===== Unary =====
 std::string SemanticAnalyzer::visitUnaryExpr(ASTUnaryExpr *node) {
     std::string t = visitExpr(node->expr.get());
-    ensureType(t, "int", "Unary operator requires int operand");
-    return "int";
+    
+    if (node->op == ASTUnaryOpKind::Deref) {
+        // 解引用操作：必须作用于指针类型
+        if (!isPointerType(t)) {
+            throw SemanticError("Dereference operator requires pointer operand, got " + t);
+        }
+        // 返回指针指向的基础类型
+        return getBaseType(t);
+    } else {
+        // Neg, Not 等操作要求 int
+        ensureType(t, "int", "Unary operator requires int operand");
+        return "int";
+    }
 }
 
 // ===== Identifier =====
@@ -253,7 +285,43 @@ std::string SemanticAnalyzer::visitAssign(ASTAssignExpr *node) {
     }
 
     std::string valueType = visitExpr(node->value.get());
-    ensureType(valueType, varType, "Assignment type mismatch for " + node->name);
+    
+    // 对于指针类型，允许整数赋值（地址）
+    if (isPointerType(varType)) {
+        if (valueType != "int" && valueType != varType) {
+            throw SemanticError("Assignment type mismatch: cannot assign " + valueType + " to " + varType);
+        }
+    } else {
+        ensureType(valueType, varType, "Assignment type mismatch for " + node->name);
+    }
 
     return varType;
+}
+
+// ===== Store (指针赋值) =====
+std::string SemanticAnalyzer::visitStore(ASTStoreExpr *node) {
+    // 检查地址表达式类型
+    std::string addrType = visitExpr(node->address.get());
+    if (!isPointerType(addrType)) {
+        throw SemanticError("Store operation requires pointer address, got " + addrType);
+    }
+    
+    // 检查值的类型
+    std::string valType = visitExpr(node->value.get());
+    std::string baseType = getBaseType(addrType);
+    ensureType(valType, baseType, "Store value type mismatch");
+    
+    return "int";  // store 操作返回 int（或 void，这里简化为 int）
+}
+
+// ===== 辅助方法 =====
+bool SemanticAnalyzer::isPointerType(const std::string &type) const {
+    return type.size() > 0 && type.back() == '*';
+}
+
+std::string SemanticAnalyzer::getBaseType(const std::string &type) const {
+    if (isPointerType(type)) {
+        return type.substr(0, type.size() - 1);  // 移除 '*'
+    }
+    return type;
 }

@@ -29,7 +29,7 @@ ASTBlock::~ASTBlock() = default;
 
 // VarDecl
 ASTVarDecl::ASTVarDecl()
-    : ASTStatement(ASTNodeKind::VarDecl) {}
+    : ASTStatement(ASTNodeKind::VarDecl), isPointer(false) {}
 
 ASTVarDecl::~ASTVarDecl() = default;
 
@@ -96,6 +96,12 @@ ASTAssignExpr::ASTAssignExpr()
 
 ASTAssignExpr::~ASTAssignExpr() = default;
 
+// StoreExpr
+ASTStoreExpr::ASTStoreExpr()
+    : ASTExpression(ASTNodeKind::StoreExpr) {}
+
+ASTStoreExpr::~ASTStoreExpr() = default;
+
 // -------------------- AST dump（调试用） --------------------
 
 static void dumpExpr(const ASTExpression *expr, std::ostream &os, int indent);
@@ -121,6 +127,7 @@ static const char *unaryOpToString(ASTUnaryOpKind op) {
     switch (op) {
     case ASTUnaryOpKind::Neg: return "-";
     case ASTUnaryOpKind::Not: return "!";
+    case ASTUnaryOpKind::Deref: return "*";
     }
     return "?";
 }
