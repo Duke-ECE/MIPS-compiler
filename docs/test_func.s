@@ -6,7 +6,7 @@ addi $fp, $sp, 0
 sw $ra, 2($sp)
 addi $t0, $zero, 5
 sw $t0, -1($fp)
-addi $t1, $zero, 3
+addi $t1, $zero, 1
 sw $t1, -2($fp)
 lw $t2, -1($fp)
 lw $t3, -2($fp)
@@ -60,10 +60,14 @@ addi $fp, $sp, 0
 sw $ra, 2($sp)
 sw $a0, -1($fp)
 sw $a1, -2($fp)
-lw $t8, -1($fp)
-lw $t9, -2($fp)
-add $t0, $t8, $t9
-addi $v0, $t0, 0
+lw $t0, -1($fp)
+lw $t1, -2($fp)
+add $t2, $t0, $t1
+addi $t3, $zero, 48
+add $t4, $t2, $t3
+sw $t4, -3($fp)
+lw $t5, -3($fp)
+addi $v0, $t5, 0
 # Function epilogue
 lw $ra, 2($fp)
 lw $fp, 1($fp)

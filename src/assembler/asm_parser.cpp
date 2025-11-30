@@ -52,8 +52,8 @@ AsmParser::AsmParser(AsmLexer&& lex)
 ParseResult AsmParser::parse() {
     ParseResult result;
     
-    // 获取所有 token（包含换行，不包含注释）
-    tokens = lexer.tokenize(true, false);
+    // 获取所有 token（包含换行和注释，用于生成 NOP）
+    tokens = lexer.tokenize(true, true);
     currentIndex = 0;
     
     // 第一遍：收集标签
@@ -120,6 +120,15 @@ void AsmParser::firstPass() {
             continue;
         }
         
+        if (token.type == AsmTokenType::COMMENT) {
+            // 注释行也占用一个地址（生成 NOP）
+            if (inTextSection && !inDataSection) {
+                currentAddress++;
+            }
+            advance();
+            continue;
+        }
+        
         if (token.type == AsmTokenType::DIRECTIVE) {
             // 处理汇编指令
             if (token.text == ".text") {
@@ -177,13 +186,47 @@ void AsmParser::secondPass() {
             continue;
         }
         
-        // 处理标签
+        // 处理标签 - 生成 NOP 指令
         if (token.type == AsmTokenType::LABEL) {
             if (inDataSection) {
                 // 数据段标签，保存以便关联到下一个 .word
                 pendingDataLabel = token.text;
+            } else {
+                // 代码段标签，生成 NOP 指令（addi $zero, $zero, 0）
+                ParsedInstruction nop;
+                nop.line = token.line;
+                nop.address = currentAddress;
+                nop.opcode = isa::Opcode::ADDI;
+                nop.type = isa::InstructionType::I_TYPE;
+                nop.rd = isa::Register::R0;
+                nop.rs = isa::Register::R0;
+                nop.immediate = 0;
+                nop.hasLabelRef = false;
+                nop.originalText = token.text + ": (NOP)";
+                instructions.push_back(nop);
+                currentAddress++;
             }
-            // 代码段标签已在第一遍处理
+            advance();
+            continue;
+        }
+        
+        // 处理注释 - 生成 NOP 指令
+        if (token.type == AsmTokenType::COMMENT) {
+            if (inTextSection && !inDataSection) {
+                // 代码段注释，生成 NOP 指令（addi $zero, $zero, 0）
+                ParsedInstruction nop;
+                nop.line = token.line;
+                nop.address = currentAddress;
+                nop.opcode = isa::Opcode::ADDI;
+                nop.type = isa::InstructionType::I_TYPE;
+                nop.rd = isa::Register::R0;
+                nop.rs = isa::Register::R0;
+                nop.immediate = 0;
+                nop.hasLabelRef = false;
+                nop.originalText = token.text + " (NOP)";
+                instructions.push_back(nop);
+                currentAddress++;
+            }
             advance();
             continue;
         }
