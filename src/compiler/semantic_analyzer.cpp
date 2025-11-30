@@ -1,6 +1,19 @@
 #include "compiler/semantic_analyzer.hpp"
 #include <sstream>
 
+// ===== 构造函数 =====
+SemanticAnalyzer::SemanticAnalyzer() {
+    initBuiltinFunctions();
+}
+
+// ===== 初始化内建函数 =====
+void SemanticAnalyzer::initBuiltinFunctions() {
+    // input() 返回 int，无参数
+    // output(int) 返回 void（在我们的系统中用 "void" 表示）
+    // 注意：这里我们将内建函数注册到全局作用域
+    // 在 visitProgram 中会 enterScope，所以这里不需要
+}
+
 // ===== Helper：类型检查 =====
 void SemanticAnalyzer::ensureType(const std::string &type,
                                   const std::string &expected,
@@ -47,6 +60,10 @@ void SemanticAnalyzer::visit(ASTNode *node) {
 // ===== Program =====
 void SemanticAnalyzer::visitProgram(ASTProgram *node) {
     symbols.enterScope(); // global scope
+
+    // 注册内建函数
+    symbols.declare("input", "int");   // int input()
+    symbols.declare("output", "void"); // void output(int)
 
     for (auto &func : node->functions) {
         // 函数名放入 global symbol table（类型 = returnType）
@@ -194,6 +211,25 @@ std::string SemanticAnalyzer::visitNumber(ASTNumberExpr *node) {
 
 // ===== Call =====
 std::string SemanticAnalyzer::visitCall(ASTCallExpr *node) {
+    // 特殊处理内建函数 input 和 output
+    if (node->callee == "input") {
+        // input() 无参数
+        if (!node->arguments.empty()) {
+            throw SemanticError("input() takes no arguments");
+        }
+        return "int";
+    }
+    
+    if (node->callee == "output") {
+        // output(int) 接受一个 int 参数
+        if (node->arguments.size() != 1) {
+            throw SemanticError("output() takes exactly one argument");
+        }
+        std::string argType = visitExpr(node->arguments[0].get());
+        ensureType(argType, "int", "output() argument must be int");
+        return "void";
+    }
+    
     // 查找函数
     std::string ft = symbols.lookup(node->callee);
     if (ft.empty()) {

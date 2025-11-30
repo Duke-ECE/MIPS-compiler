@@ -10,8 +10,8 @@ enum class TokenType {
     INT, RETURN, IF, ELSE, WHILE,
 
     // Identifiers & literals
-    IDENTIFIER,
-    NUMBER,
+    IDENTIFIER,// 变量名、函数名等
+    NUMBER,// 数字字面量
 
     // Operators
     PLUS, MINUS, STAR, SLASH,// +, -, *, /

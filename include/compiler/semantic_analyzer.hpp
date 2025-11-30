@@ -18,13 +18,16 @@ public:
 
 class SemanticAnalyzer {
 public:
-    SemanticAnalyzer() = default;
+    SemanticAnalyzer();
 
     // 入口：语义检查整个程序
     void analyze(ASTProgram *program);
 
 private:
     SymbolTable symbols;
+
+    // 初始化内建函数
+    void initBuiltinFunctions();
 
 private:
     // dispatch：不同节点的 visit 方法
