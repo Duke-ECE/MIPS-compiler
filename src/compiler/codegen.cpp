@@ -104,20 +104,62 @@ void CodeGen::translate(const IRInstruction &I,
     }
 
     // ------------------------------------
-    // load: load dst, offset  → lw dst, offset($fp)
+    // load: load dst, src  
+    // 如果 src 是数字（栈偏移）→ lw dst, src($fp)
+    // 如果 src 是寄存器/变量（指针）→ lw dst, 0(src)
     // ------------------------------------
     if (op == "load") {
         std::string rd = allocateRegister(I.dst);
-        out.push_back("lw " + rd + ", " + I.src1 + "($fp)");
+        
+        // 检查 src1 是否为纯数字（栈偏移）
+        bool isOffset = true;
+        if (!I.src1.empty()) {
+            for (char c : I.src1) {
+                if (!std::isdigit(c) && c != '-') {
+                    isOffset = false;
+                    break;
+                }
+            }
+        }
+        
+        if (isOffset && !I.src1.empty()) {
+            // 栈变量加载：lw dst, offset($fp)
+            out.push_back("lw " + rd + ", " + I.src1 + "($fp)");
+        } else {
+            // 指针解引用：lw dst, 0(addr_reg)
+            std::string raddr = allocateRegister(I.src1);
+            out.push_back("lw " + rd + ", 0(" + raddr + ")");
+        }
         return;
     }
 
     // ------------------------------------
-    // store: store src, offset → sw src, offset($fp)
+    // store: store value, dest
+    // 如果 dest 是数字（栈偏移）→ sw value, dest($fp)
+    // 如果 dest 是寄存器/变量（指针）→ sw value, 0(dest)
     // ------------------------------------
     if (op == "store") {
         std::string rs = allocateRegister(I.dst);
-        out.push_back("sw " + rs + ", " + I.src1 + "($fp)");
+        
+        // 检查 src1 是否为纯数字（栈偏移）
+        bool isOffset = true;
+        if (!I.src1.empty()) {
+            for (char c : I.src1) {
+                if (!std::isdigit(c) && c != '-') {
+                    isOffset = false;
+                    break;
+                }
+            }
+        }
+        
+        if (isOffset && !I.src1.empty()) {
+            // 栈变量存储：sw value, offset($fp)
+            out.push_back("sw " + rs + ", " + I.src1 + "($fp)");
+        } else {
+            // 指针存储：sw value, 0(addr_reg)
+            std::string raddr = allocateRegister(I.src1);
+            out.push_back("sw " + rs + ", 0(" + raddr + ")");
+        }
         return;
     }
 

@@ -97,22 +97,24 @@ std::unique_ptr<ASTFunction> Parser::parseFunction() {
     return func;
 }
 
-// parameters → "int" IDENT ("," "int" IDENT)* | ε
+// parameters → "int" "*"? IDENT ("," "int" "*"? IDENT)* | ε
 void Parser::parseParameterList(ASTFunction &func) {
     // 第一个参数
     consume(TokenType::INT, "expected 'int' in parameter list");
+    bool isPointer = match(TokenType::STAR);
     const Token &firstName =
         consume(TokenType::IDENTIFIER, "expected parameter name");
 
-    func.paramTypes.push_back("int");
+    func.paramTypes.push_back(isPointer ? "int*" : "int");
     func.paramNames.push_back(firstName.text);
 
     // 后续参数
     while (match(TokenType::COMMA)) {
         consume(TokenType::INT, "expected 'int' in parameter list");
+        bool isPointer = match(TokenType::STAR);
         const Token &nameTok =
             consume(TokenType::IDENTIFIER, "expected parameter name");
-        func.paramTypes.push_back("int");
+        func.paramTypes.push_back(isPointer ? "int*" : "int");
         func.paramNames.push_back(nameTok.text);
     }
 }
@@ -164,9 +166,16 @@ std::unique_ptr<ASTStatement> Parser::parseStatement() {
     return parseExpressionStatement();
 }
 
-// declaration → "int" IDENT ("=" expression)? ";"
+// declaration → "int" "*"? IDENT ("=" expression)? ";"
 std::unique_ptr<ASTStatement> Parser::parseDeclarationStatement() {
     consume(TokenType::INT, "expected 'int' in declaration");
+    
+    // 检查是否为指针类型
+    bool isPointer = false;
+    if (match(TokenType::STAR)) {
+        isPointer = true;
+    }
+    
     const Token &nameTok =
         consume(TokenType::IDENTIFIER, "expected variable name");
 
@@ -178,7 +187,8 @@ std::unique_ptr<ASTStatement> Parser::parseDeclarationStatement() {
     consume(TokenType::SEMICOLON, "expected ';' after declaration");
 
     auto decl = std::make_unique<ASTVarDecl>();
-    decl->typeName = "int";
+    decl->typeName = isPointer ? "int*" : "int";
+    decl->isPointer = isPointer;
     decl->name = nameTok.text;
     decl->initExpr = std::move(initExpr);
     return decl;
@@ -258,24 +268,32 @@ std::unique_ptr<ASTExpression> Parser::parseExpression() {
     return parseAssignment();
 }
 
-// assignment → IDENT "=" assignment | equality
+// assignment → (IDENT | "*" unary) "=" assignment | equality
 std::unique_ptr<ASTExpression> Parser::parseAssignment() {
     auto left = parseEquality();
 
     if (match(TokenType::ASSIGN)) {
-        // 左边必须是 Identifier
-        auto *id = dynamic_cast<ASTIdentifierExpr *>(left.get());
-        if (!id) {
-            throw ParseError("Left-hand side of assignment must be a variable");
-        }
-
-        std::string name = id->name;
         auto value = parseAssignment();
-
-        auto assign = std::make_unique<ASTAssignExpr>();
-        assign->name = name;
-        assign->value = std::move(value);
-        return assign;
+        
+        // 左边可以是 Identifier（普通赋值）或 UnaryExpr with Deref（指针赋值）
+        auto *id = dynamic_cast<ASTIdentifierExpr *>(left.get());
+        auto *deref = dynamic_cast<ASTUnaryExpr *>(left.get());
+        
+        if (id) {
+            // 普通变量赋值：x = value
+            auto assign = std::make_unique<ASTAssignExpr>();
+            assign->name = id->name;
+            assign->value = std::move(value);
+            return assign;
+        } else if (deref && deref->op == ASTUnaryOpKind::Deref) {
+            // 解引用赋值：*addr = value
+            auto store = std::make_unique<ASTStoreExpr>();
+            store->address = std::move(deref->expr);  // 提取地址表达式
+            store->value = std::move(value);
+            return store;
+        } else {
+            throw ParseError("Left-hand side of assignment must be a variable or pointer dereference");
+        }
     }
 
     return left;
@@ -377,12 +395,21 @@ std::unique_ptr<ASTExpression> Parser::parseMultiplicative() {
     return expr;
 }
 
-// unary → ("!" | "-") unary | primary
+// unary → ("!" | "-" | "*") unary | primary
 std::unique_ptr<ASTExpression> Parser::parseUnary() {
     if (match(TokenType::MINUS)) {
         auto operand = parseUnary();
         auto node = std::make_unique<ASTUnaryExpr>();
         node->op = ASTUnaryOpKind::Neg;
+        node->expr = std::move(operand);
+        return node;
+    }
+    
+    // 解引用操作符 *
+    if (match(TokenType::STAR)) {
+        auto operand = parseUnary();
+        auto node = std::make_unique<ASTUnaryExpr>();
+        node->op = ASTUnaryOpKind::Deref;
         node->expr = std::move(operand);
         return node;
     }
@@ -395,7 +422,14 @@ std::unique_ptr<ASTExpression> Parser::parsePrimary() {
     if (match(TokenType::NUMBER)) {
         const Token &numTok = previous();
         auto node = std::make_unique<ASTNumberExpr>();
-        node->value = std::stoi(numTok.text);
+        // 支持十六进制 (0x 开头) 和十进制
+        if (numTok.text.size() > 2 && 
+            numTok.text[0] == '0' && 
+            (numTok.text[1] == 'x' || numTok.text[1] == 'X')) {
+            node->value = std::stoi(numTok.text, nullptr, 16);
+        } else {
+            node->value = std::stoi(numTok.text);
+        }
         return node;
     }
 

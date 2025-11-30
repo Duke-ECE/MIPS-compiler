@@ -2,7 +2,7 @@ int main()
 {
     int x0;
     int y0;
-    int* fb = (int*)0x00100000;
+    int* fb = 0x00100000;
     int width = 680;
 
     for (int y = 0; y < 10; y++) {

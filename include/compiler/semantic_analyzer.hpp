@@ -53,10 +53,13 @@ private:
     std::string visitNumber(ASTNumberExpr *node);
     std::string visitCall(ASTCallExpr *node);
     std::string visitAssign(ASTAssignExpr *node);
+    std::string visitStore(ASTStoreExpr *node);
 
     // helper
     void ensureType(const std::string &type, const std::string &expected,
                     const std::string &errMsg);
+    bool isPointerType(const std::string &type) const;
+    std::string getBaseType(const std::string &type) const;
 };
 
 #endif // SEMANTIC_ANALYZER_HPP

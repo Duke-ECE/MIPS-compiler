@@ -50,6 +50,21 @@ Token Lexer::identifierOrKeyword() {
 Token Lexer::number() {
     int startCol = col;
     std::string text;
+    
+    // 检查是否为十六进制（0x 或 0X）
+    if (peek() == '0' && !eof()) {
+        text.push_back(get());
+        if (!eof() && (peek() == 'x' || peek() == 'X')) {
+            text.push_back(get());
+            // 读取十六进制数字
+            while (!eof() && std::isxdigit(peek())) {
+                text.push_back(get());
+            }
+            return Token(TokenType::NUMBER, text, line, startCol);
+        }
+    }
+    
+    // 普通十进制数字
     while (!eof() && std::isdigit(peek())) {
         text.push_back(get());
     }
