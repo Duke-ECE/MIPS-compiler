@@ -46,3 +46,4 @@ main.dSYM/*
 .DS_Store
 CMakeLists.txt
 /.vscode/*
+/.github/*

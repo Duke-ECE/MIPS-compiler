@@ -110,3 +110,4 @@ std::vector<Token> Lexer::tokenize() {
     }
     return tokens;
 }
+
