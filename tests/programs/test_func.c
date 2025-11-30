@@ -1,7 +1,7 @@
 
 int main() {
     int a = 5;
-    int b = 3;
+    int b = 1;
     int sum = add(a, b);
     output(sum);
     while (1){

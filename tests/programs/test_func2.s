@@ -6,7 +6,7 @@ addi $fp, $sp, 0
 sw $ra, 2($sp)
 addi $t0, $zero, 5
 sw $t0, -1($fp)
-addi $t1, $zero, 3
+addi $t1, $zero, 1
 sw $t1, -2($fp)
 lw $t2, -1($fp)
 lw $t3, -2($fp)
