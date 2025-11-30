@@ -3,7 +3,6 @@
 #include <stdexcept>
 
 CodeGen::CodeGen() : currentFrameSize(0) {
-    initRegisterPools();
 }
 
 // ========================================================
@@ -19,14 +18,30 @@ std::string CodeGen::allocateRegister(const std::string &var) {
         return var;
     }
 
+    // 查询寄存器分配器的结果
+    if (regAllocator.hasLocation(var)) {
+        const auto &loc = regAllocator.getLocation(var);
+        if (loc.inReg) {
+            return loc.reg;
+        }
+        // 变量已被溢出到栈，但当前简化实现中我们仍然需要一个寄存器来访问它
+        // 使用一个临时寄存器（这是一个简化，真正的实现应该在之前reload）
+        // 为了简化，我们为溢出的变量也分配一个临时寄存器
+        if (regMap.find(var) == regMap.end()) {
+            // 使用栈位置对应的临时寄存器（循环使用t0-t9）
+            int idx = (-loc.stackOffset - 3) % 10;
+            regMap[var] = "$t" + std::to_string(idx);
+        }
+        return regMap[var];
+    }
+
+    // 如果有本地映射，使用本地映射
     auto it = regMap.find(var);
     if (it != regMap.end())
         return it->second;
 
-    // 新变量 → 分配一个临时寄存器 (t0→t9)
-    std::string reg = allocateTemp();
-    regMap[var] = reg;
-    return reg;
+    // 变量没有分配，这是一个错误
+    throw std::runtime_error("Variable " + var + " has no register allocation");
 }
 
 std::string CodeGen::regName(int id) const {
@@ -43,25 +58,15 @@ std::string CodeGen::labelName(const std::string &name) const {
 
 std::vector<std::string>
 CodeGen::generateAssembly(const IRProgram &program) {
-    // 两遍处理：
-    // 第一遍：进行寄存器分配（不生成代码）
-    std::vector<std::string> dummy;
-    for (auto &inst : program.instructions) {
-        translate(inst, dummy);
-    }
+    // 使用寄存器分配器进行寄存器分配和spill/reload
+    allocatedProgram = regAllocator.allocate(program);
     
-    // 重置寄存器池但保留 usedCalleeSaved 信息
-    auto savedUsage = usedCalleeSaved;  // 保存第一遍的结果
-    initRegisterPools();
-    usedCalleeSaved = savedUsage;  // 恢复使用信息
-    regMap.clear();
-    currentFrameSize = 0;
-    
-    // 第二遍：生成实际代码
+    // 生成汇编代码
     std::vector<std::string> out;
-    for (auto &inst : program.instructions) {
+    for (auto &inst : allocatedProgram.instructions) {
         translate(inst, out);
     }
+    
     return out;
 }
 
@@ -331,49 +336,6 @@ void CodeGen::translate(const IRInstruction &I,
 // ========================================================
 // Register Pool Initialization
 // ========================================================
-
-void CodeGen::initRegisterPools() {
-    availableTemps = {"$t0","$t1","$t2","$t3","$t4","$t5","$t6","$t7","$t8","$t9"};
-    availableSaved = {"$s0","$s1","$s2","$s3","$s4","$s5","$s6","$s7"};
-    savedOrder     = availableSaved;
-}
-
-std::string CodeGen::allocateTemp() {
-    if (!availableTemps.empty()) {
-        std::string r = availableTemps.front();
-        availableTemps.erase(availableTemps.begin());   // 正序取出 t0→t1→t2
-        return r;
-    }
-    // 临时寄存器用完，使用 saved 寄存器作为 fallback
-    if (!availableSaved.empty()) {
-        std::string r = availableSaved.front();
-        availableSaved.erase(availableSaved.begin());
-        usedCalleeSaved[r] = true;
-        return r;
-    }
-    // 所有寄存器都用完了，这种情况需要寄存器溢出
-    throw std::runtime_error("Out of registers - need register spilling");
-}
-
-std::string CodeGen::allocateSaved() {
-    if (!availableSaved.empty()) {
-        std::string r = availableSaved.front();
-        availableSaved.erase(availableSaved.begin());
-        usedCalleeSaved[r] = true;
-        return r;
-    }
-    return allocateTemp();
-}
-
-void CodeGen::releaseRegister(const std::string &reg) {
-    if (reg.rfind("$t",0)==0)
-        availableTemps.push_back(reg);
-    else if (reg.rfind("$s",0)==0) {
-        availableSaved.push_back(reg);
-        usedCalleeSaved[reg]=false;
-    }
-}
-
 // ========================================================
 // Prologue / Epilogue
 // ========================================================
@@ -389,9 +351,16 @@ void CodeGen::generatePrologue(int frameSize,
     out.push_back("addi $fp, $sp, 0");
     out.push_back("sw $ra, 2($sp)");
 
+    // 保存使用的callee-saved寄存器
     int offs = 3;
+    const auto &usedCalleeSaved = regAllocator.getUsedCalleeSaved();
+    std::vector<std::string> savedOrder = {
+        "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7"
+    };
+    
     for (auto &reg : savedOrder) {
-        if (usedCalleeSaved[reg]) {
+        auto it = usedCalleeSaved.find(reg);
+        if (it != usedCalleeSaved.end() && it->second) {
             out.push_back("sw " + reg + ", " + std::to_string(offs) + "($sp)");
             offs++;
         }
@@ -401,9 +370,16 @@ void CodeGen::generatePrologue(int frameSize,
 void CodeGen::generateEpilogue(int frameSize,
                                std::vector<std::string> &out)
 {
+    // 恢复使用的callee-saved寄存器
     int offs = 3;
+    const auto &usedCalleeSaved = regAllocator.getUsedCalleeSaved();
+    std::vector<std::string> savedOrder = {
+        "$s0", "$s1", "$s2", "$s3", "$s4", "$s5", "$s6", "$s7"
+    };
+    
     for (auto &reg : savedOrder) {
-        if (usedCalleeSaved[reg]) {
+        auto it = usedCalleeSaved.find(reg);
+        if (it != usedCalleeSaved.end() && it->second) {
             out.push_back("lw " + reg + ", " + std::to_string(offs) + "($fp)");
             offs++;
         }

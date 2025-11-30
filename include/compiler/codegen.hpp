@@ -11,6 +11,7 @@
 #define CODEGEN_HPP
 
 #include "compiler/ir.hpp"
+#include "compiler/reg_allocator.hpp"
 #include "isa/Registers.hpp"
 #include <string>
 #include <vector>
@@ -29,25 +30,17 @@ private:
     // -----------------------------
     // Register allocation state
     // -----------------------------
+    RegisterAllocator regAllocator;                        // 寄存器分配器
     std::unordered_map<std::string, std::string> regMap;   // variable → register
-    std::vector<std::string> availableTemps;               // $t0–$t9
-    std::vector<std::string> availableSaved;               // $s0–$s7
-
-    // NEW: fixed ordering for callee-saved registers
-    std::vector<std::string> savedOrder;                   // { $s0, $s1, ..., $s7 }
-
-    std::unordered_map<std::string, bool> usedCalleeSaved; // which $s registers used
+    IRProgram allocatedProgram;                             // 经过寄存器分配的IR
 
     int currentFrameSize;                                  // stack frame size
 
 
     // -----------------------------
-    // Register allocators
+    // Register allocators (保留用于局部寄存器查询)
     // -----------------------------
-    std::string allocateTemp();                            // get a $t register
-    std::string allocateSaved();                           // get a $s register
     std::string allocateRegister(const std::string &var);  // var → register
-    void releaseRegister(const std::string &reg);          // return register
 
 
     // -----------------------------
