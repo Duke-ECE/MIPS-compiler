@@ -113,7 +113,9 @@ void AsmParser::firstPass() {
                 if (inDataSection) {
                     symbolTable[token.text] = SymbolInfo(token.text, dataAddress, token.line, true);
                 } else {
-                    symbolTable[token.text] = SymbolInfo(token.text, currentAddress, token.line, false);
+                    // symbolTable[token.text] = SymbolInfo(token.text, currentAddress, token.line, false);
+                    symbolTable[token.text] = SymbolInfo(token.text, currentAddress + 1, token.line, false);
+                    currentAddress++;
                 }
             }
             advance();

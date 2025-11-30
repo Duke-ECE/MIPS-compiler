@@ -115,4 +115,22 @@ AssembleResult Assembler::assemble(const std::string& asmText) {
     }
 }
 
+/*****************************************
+ * 5. 简化接口：Assembly Text → Machine Code（抛出异常）
+ *****************************************/
+std::vector<uint32_t> Assembler::assembleFromString(const std::string& asmText) {
+    AssembleResult result = assemble(asmText);
+    
+    if (!result.success) {
+        std::ostringstream oss;
+        oss << "汇编失败:\n";
+        for (const auto& error : result.errors) {
+            oss << "  " << error << "\n";
+        }
+        throw std::runtime_error(oss.str());
+    }
+    
+    return result.imem;
+}
+
 } // namespace assembler

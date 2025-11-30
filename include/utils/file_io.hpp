@@ -47,6 +47,14 @@ public:
     static std::optional<std::string> readFile(const std::string& path);
     
     /**
+     * @brief 读取文本文件（带异常抛出）
+     * @param path 文件路径
+     * @return 文件内容字符串
+     * @throws std::runtime_error 如果读取失败
+     */
+    static std::string readText(const std::string& path);
+    
+    /**
      * @brief 读取文件的所有行
      * @param path 文件路径
      * @return 行列表，失败返回 nullopt
@@ -62,6 +70,14 @@ public:
      * @return 操作结果
      */
     static FileResult writeFile(const std::string& path, const std::string& content);
+    
+    /**
+     * @brief 写入文本到文件（带异常抛出）
+     * @param path 文件路径
+     * @param content 文件内容
+     * @throws std::runtime_error 如果写入失败
+     */
+    static void writeText(const std::string& path, const std::string& content);
     
     /**
      * @brief 写入行列表到文件

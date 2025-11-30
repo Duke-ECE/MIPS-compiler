@@ -28,6 +28,14 @@ std::optional<std::string> FileIO::readFile(const std::string& path) {
     return buffer.str();
 }
 
+std::string FileIO::readText(const std::string& path) {
+    auto content = readFile(path);
+    if (!content.has_value()) {
+        throw std::runtime_error("无法读取文件: " + path);
+    }
+    return *content;
+}
+
 std::optional<std::vector<std::string>> FileIO::readLines(const std::string& path) {
     std::ifstream file(path);
     if (!file.is_open()) {
@@ -68,6 +76,13 @@ FileResult FileIO::writeFile(const std::string& path, const std::string& content
     file.close();
     
     return FileResult(true);
+}
+
+void FileIO::writeText(const std::string& path, const std::string& content) {
+    FileResult result = writeFile(path, content);
+    if (!result.success) {
+        throw std::runtime_error(result.error);
+    }
 }
 
 FileResult FileIO::writeLines(const std::string& path, const std::vector<std::string>& lines) {

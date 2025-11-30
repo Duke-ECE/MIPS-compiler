@@ -1,4 +1,5 @@
 #include "compiler/compiler.hpp"
+#include "assembler/assembler.hpp"
 #include <sstream>
 #include <stdexcept>
 
@@ -106,5 +107,22 @@ std::string Compiler::compileToAssembly(const std::string &sourceCode) {
 
     } catch (const std::exception &e) {
         throw std::runtime_error(std::string("Compiler failed: ") + e.what());
+    }
+}
+
+/*****************************************
+ * 7. 顶层接口：C → Machine Code
+ *****************************************/
+std::vector<uint32_t> Compiler::compileToMachineCode(const std::string &sourceCode) {
+    try {
+        // 1. 编译为汇编代码
+        std::string asmText = compileToAssembly(sourceCode);
+        
+        // 2. 使用汇编器生成机器码
+        assembler::Assembler assembler;
+        return assembler.assembleFromString(asmText);
+        
+    } catch (const std::exception &e) {
+        throw std::runtime_error(std::string("Compiler to machine code failed: ") + e.what());
     }
 }

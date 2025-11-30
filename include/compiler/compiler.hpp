@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <cstdint>
 
 #include "lexer.hpp"
 #include "parser.hpp"
@@ -16,6 +17,9 @@ class Compiler {
 public:
     // C → Assembly text
     std::string compileToAssembly(const std::string &sourceCode);
+    
+    // C → Machine Code（直接返回机器码，避免中间文件读写）
+    std::vector<uint32_t> compileToMachineCode(const std::string &sourceCode);
 
 private:
     // Internal pipeline helpers

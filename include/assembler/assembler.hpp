@@ -95,6 +95,14 @@ public:
      * @return 汇编结果，包含成功状态、机器码和错误信息
      */
     AssembleResult assemble(const std::string& asmText);
+    
+    /**
+     * @brief 从汇编字符串生成机器码（简化接口）
+     * @param asmText 汇编源代码文本
+     * @return 指令内存机器码
+     * @throws std::runtime_error 如果汇编失败
+     */
+    std::vector<uint32_t> assembleFromString(const std::string& asmText);
 };
 
 } // namespace assembler
